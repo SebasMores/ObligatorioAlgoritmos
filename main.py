@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), ''))
+
 from fastapi import FastAPI, HTTPException, Request
 from utils.get_type_message import get_message_type
 
