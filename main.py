@@ -1,98 +1,87 @@
-from fastapi import FastAPI, HTTPException, Request
-from utils.get_message_type import get_message_type
+from fastapi import FastAPI, Request
 from chat import bot
+from services.whatsapp_client import send_text_message
 import os
 
 app = FastAPI()
 
-# =========================
-# CONFIGURACIÓN
-# =========================
-
 VERIFY_TOKEN = "bot_delivery_YA_2025"
 
 
-@app.get("/welcome")
-def index():
-    return {"mensaje": "welcome developer"}
+# =========================================================
+# 1. ENDPOINT DE VERIFICACIÓN (Meta lo usa al configurar webhook)
+# =========================================================
+
+@app.get("/webhook")
+async def verify_webhook(request: Request):
+    """
+    Este endpoint lo usa Meta para verificar que tu webhook es válido.
+    """
+    params = request.query_params
+
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        return int(challenge)
+
+    return {"error": "Token inválido"}
 
 
-# =========================
-# VERIFICACIÓN DE WEBHOOK
-# =========================
+# =========================================================
+# 2. ENDPOINT PRINCIPAL PARA RECIBIR MENSAJES DE WHATSAPP
+# =========================================================
 
-@app.get("/whatsapp")
-async def verify_token(request: Request):
+@app.post("/webhook")
+async def receive_message(request: Request):
+    """
+    Acá llegan TODOS los mensajes que escribe el usuario en WhatsApp.
+    """
+    payload = await request.json()
+
     try:
-        query_params = request.query_params
+        # Extraer el ID del usuario y el texto del mensaje
+        wa_id = extraer_wa_id(payload)
+        mensaje = extraer_texto(payload)
 
-        verify_token = query_params.get("hub.verify_token")
-        challenge = query_params.get("hub.challenge")
+        if not wa_id or not mensaje:
+            return {"status": "ignored"}
 
-        if verify_token and challenge and verify_token == VERIFY_TOKEN:
-            return int(challenge)
-        else:
-            raise HTTPException(status_code=400, detail="Token de verificación inválido")
+        # Pasar mensaje al bot (chat.py)
+        respuestas = bot.handle_message(wa_id, mensaje)
+
+        # Enviar cada respuesta por WhatsApp
+        for respuesta in respuestas:
+            send_text_message(wa_id, respuesta)
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error en la verificación: {e}")
+        print("Error procesando mensaje:", e)
+
+    return {"status": "ok"}
 
 
-# =========================
-# RECEPCIÓN DE MENSAJES
-# =========================
+# =========================================================
+# 3. FUNCIONES AUXILIARES PARA LEER EL PAYLOAD DE META
+# =========================================================
 
-@app.post("/whatsapp")
-async def received_message(request: Request):
+def extraer_wa_id(payload: dict) -> str | None:
+    """
+    Obtiene el número de WhatsApp del usuario que envió el mensaje.
+    """
     try:
-        body = await request.json()
-
-        entry = body.get("entry", [])
-        if not entry:
-            return "EVENT_RECEIVED"
-
-        changes = entry[0].get("changes", [])
-        if not changes:
-            return "EVENT_RECEIVED"
-
-        value = changes[0].get("value", {})
-
-        if "messages" not in value:
-            return "EVENT_RECEIVED"
-
-        messages = value["messages"]
-        if not messages:
-            return "EVENT_RECEIVED"
-
-        message = messages[0]
-
-        type_message, content = get_message_type(message)
-        number = message.get("from")
-
-        print("=====================================")
-        print(f"📩 Mensaje recibido")
-        print(f"De: {number}")
-        print(f"Tipo: {type_message}")
-        print(f"Contenido: {content}")
-        print("=====================================")
-
-        # 👉 Aquí enganchamos el Chat
-        if type_message == "text":
-            bot.user_phone = number
-            bot.process_message(content)
-
-        return "EVENT_RECEIVED"
-
-    except Exception as e:
-        print("❌ Error procesando mensaje:", str(e))
-        return "EVENT_RECEIVED"
+        return payload["entry"][0]["changes"][0]["value"]["messages"][0]["from"]
+    except Exception:
+        return None
 
 
-# =========================
-# EJECUCIÓN LOCAL
-# =========================
+def extraer_texto(payload: dict) -> str | None:
+    """
+    Obtiene el texto del mensaje que envió el usuario.
+    """
+    try:
+        return payload["entry"][0]["changes"][0]["value"]["messages"][0]["text"]["body"]
+    except Exception:
+        return None
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 

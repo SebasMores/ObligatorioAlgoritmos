@@ -1,169 +1,256 @@
-from functools import wraps
-from typing import Any, Optional, Dict, Callable
-from services.whatsapp_client import send_text_message
+from dataclasses import dataclass, field
+from typing import Dict, List, Any, Optional
+
+# --- Estados de la conversación ---
+
+STATE_IDLE = "IDLE"
+STATE_MAIN_MENU = "MAIN_MENU"
+STATE_RUTA = "RUTA"  # Opción 1: calcular ruta
+
+WAITING_NONE = None
+WAITING_RUTA_ORIGEN = "RUTA_ORIGEN"
+WAITING_RUTA_DESTINO = "RUTA_DESTINO"
 
 
-class Chat:
-    def __init__(self):
-        self.function_graph: Dict[str, Dict] = {}
-        self.user_phone: str = ""
-        self.waiting_for: Optional[Callable] = None
-        self.conversation_data: Dict[str, Any] = {}
+@dataclass
+class ChatSession:
+    """
+    Representa el estado de conversación de un usuario.
+    """
+    state: str = STATE_IDLE
+    waiting_for: Optional[str] = WAITING_NONE
+    data: Dict[str, Any] = field(default_factory=dict)
 
-    # =============== REGISTRO DE FUNCIONES (NODOS DEL GRAFO) ===============
 
-    def register(self, command: str):
-        """Decorador para registrar comandos del bot."""
-        def decorator(func):
-            @wraps(func)
-            def wrapper(*args, **kwargs):
-                return func(*args, **kwargs)
+class ChatBot:
+    """
+    Núcleo de la lógica conversacional del bot.
+    - Maneja sesiones por usuario (user_id).
+    - Expone un método público handle_message(user_id, text)
+      que devuelve una lista de strings (respuestas).
+    """
 
-            self.function_graph[command] = {
-                "function": wrapper,
-                "name": func.__name__,
-                "doc": func.__doc__,
-                "command": command,
-            }
-            return wrapper
-        return decorator
+    def __init__(self) -> None:
+        self.sessions: Dict[str, ChatSession] = {}
 
-    # ==================== MANEJO DE ESTADO DE LA CONVERSACIÓN ====================
+    # --------- Gestión de sesiones ---------
 
-    def set_waiting_for(self, func: Callable, **context_data):
-        """Setea la función que debe manejar la próxima respuesta del usuario."""
-        self.waiting_for = func
+    def _get_session(self, user_id: str) -> ChatSession:
+        if user_id not in self.sessions:
+            self.sessions[user_id] = ChatSession()
+        return self.sessions[user_id]
 
-        if context_data:
-            self.conversation_data.update(context_data)
+    # --------- API pública ---------
 
-        print(f"⏳ Esperando respuesta para: {func.__name__}")
-
-    def set_conversation_data(self, key: str, value: Any):
-        self.conversation_data[key] = value
-
-    def get_conversation_data(self, key: str, default: Any = None) -> Any:
-        return self.conversation_data.get(key, default)
-
-    def clear_conversation_data(self):
-        self.conversation_data = {}
-
-    def reset_conversation(self):
-        self.waiting_for = None
-        self.conversation_data = {}
-        print("✅ Conversación reseteada.")
-
-    def is_waiting_response(self) -> bool:
-        return self.waiting_for is not None
-
-    def get_waiting_function(self) -> Optional[Callable]:
-        return self.waiting_for
-
-    def print_state(self):
-        print(f"\n{'='*60}")
-        print("ESTADO DE LA CONVERSACIÓN")
-        print(f"{'='*60}")
-        waiting = self.waiting_for
-        print(f"Esperando respuesta: {waiting.__name__ if waiting else 'No'}")
-        print(f"Datos de conversación: {self.conversation_data}")
-        print(f"{'='*60}\n")
-
-    # ==================== PROCESAR MENSAJES ====================
-
-    def process_message(self, mensaje: str):
+    def handle_message(self, user_id: str, text: str) -> List[str]:
         """
-        Procesa un mensaje del usuario.
+        Procesa un mensaje de texto entrante y devuelve una lista de textos de respuesta.
+        main.py debería:
+          - Llamar a bot.handle_message(wa_id, text)
+          - Enviar cada string usando whatsapp_client.send_text_message(...)
         """
-        mensaje = mensaje.strip()
-        print(f"[Chat] Mensaje recibido para procesar: {mensaje}")
+        session = self._get_session(user_id)
+        text = text or ""
+        raw = text.strip()
+        lower = raw.lower()
 
-        # Si estamos esperando una respuesta, llamar a la función correspondiente
-        if self.is_waiting_response():
-            waiting_func = self.get_waiting_function()
-            if waiting_func:
-                waiting_func(mensaje)
-            return
+        # Normalización básica de espacios
+        if not raw:
+            return ["No recibí ningún mensaje de texto. Probá de nuevo."]
 
-        # Si es un comando (empieza con '/')
-        if mensaje.startswith("/"):
-            comando = mensaje.split()[0]
-            if comando in self.function_graph:
-                func = self.function_graph[comando]["function"]
-                func()
+        # --- Comandos globales ---
+        if lower in ("/start", "hola", "buenas", "buenos dias", "buen día", "buenas tardes", "buenas noches"):
+            # Mensaje de bienvenida básico
+            session.state = STATE_IDLE
+            session.waiting_for = WAITING_NONE
+            session.data.clear()
+            return [
+                "👋 ¡Hola! Soy el bot del obligatorio de Algoritmos y Estructuras de Datos.",
+                "Usá el comando */ayuda* para ver las opciones disponibles."
+            ]
+
+        if lower == "/reset":
+            session.state = STATE_IDLE
+            session.waiting_for = WAITING_NONE
+            session.data.clear()
+            return [
+                "🔄 Conversación reiniciada.",
+                "Mandá /ayuda para ver el menú de opciones."
+            ]
+
+        if lower == "/ayuda":
+            return self._handle_ayuda(session)
+
+        # Si no está en ningún flujo todavía, redirigimos a /ayuda
+        if session.state == STATE_IDLE:
+            return [
+                "No entendí el mensaje 🤔",
+                "Mandá */ayuda* para ver las opciones disponibles."
+            ]
+
+        # --- Enrutado según estado actual ---
+        if session.state == STATE_MAIN_MENU:
+            return self._handle_main_menu(session, lower)
+
+        if session.state == STATE_RUTA:
+            return self._handle_opcion_ruta(session, raw, lower)
+
+        # Fallback por si queda algún estado colgado
+        session.state = STATE_IDLE
+        session.waiting_for = WAITING_NONE
+        session.data.clear()
+        return [
+            "Se produjo un pequeño error en la conversación 😅",
+            "Mandá /ayuda para empezar de nuevo."
+        ]
+
+    # --------- Handlers internos ---------
+
+    def _handle_ayuda(self, session: ChatSession) -> List[str]:
+        """
+        Muestra el menú principal y prepara el estado MAIN_MENU.
+        """
+        session.state = STATE_MAIN_MENU
+        session.waiting_for = WAITING_NONE
+        session.data.clear()
+
+        return [
+            "📋 *Menú de opciones*",
+            "",
+            "1️⃣ Calcular ruta de delivery (Dijkstra / A*).",
+            "2️⃣ [Opción 2 del obligatorio].",
+            "3️⃣ [Opción 3 del obligatorio].",
+            "",
+            "Respondé con el *número* de la opción (por ejemplo: 1)."
+        ]
+
+    def _handle_main_menu(self, session: ChatSession, lower: str) -> List[str]:
+        """
+        Maneja la selección de opciones del menú principal.
+        """
+        if lower == "1":
+            # Entramos al flujo de la opción 1: calcular ruta
+            session.state = STATE_RUTA
+            session.waiting_for = WAITING_RUTA_ORIGEN
+            session.data.clear()
+
+            return [
+                "🛵 Vamos a calcular la *ruta de delivery*.",
+                "Decime el *origen* (por ejemplo: plaza_artigas, terminal, etc.)."
+            ]
+
+        if lower == "2":
+            # Placeholder para opción 2
+            return [
+                "La *Opción 2* todavía no está implementada.",
+                "Por ahora, solo está funcionando la opción 1.",
+                "Si querés probarla, mandá */ayuda* y elegí 1."
+            ]
+
+        if lower == "3":
+            # Placeholder para opción 3
+            return [
+                "La *Opción 3* todavía no está implementada.",
+                "Por ahora, solo está funcionando la opción 1.",
+                "Si querés probarla, mandá */ayuda* y elegí 1."
+            ]
+
+        return [
+            "No entendí la opción seleccionada 😅",
+            "Respondé *1, 2 o 3*, o mandá /ayuda para ver el menú de nuevo."
+        ]
+
+    def _handle_opcion_ruta(self, session: ChatSession, raw: str, lower: str) -> List[str]:
+        """
+        Flujo de la opción 1: cálculo de ruta con Dijkstra / A*.
+        - Paso 1: pedir ORIGEN
+        - Paso 2: pedir DESTINO
+        - Paso 3: llamar a coordenadas_gifs y mostrar resultado
+        """
+        # Import lazy (por si corre en entorno donde no está todavía el módulo)
+        try:
+            from coordenadas_gifs import dijkstra  # Ajustá el nombre según tu implementación
+        except Exception:
+            dijkstra = None
+
+        # Paso 1: esperando origen
+        if session.waiting_for == WAITING_RUTA_ORIGEN:
+            origen = lower  # podés usar raw si querés respetar mayúsculas
+            session.data["origen"] = origen
+            session.waiting_for = WAITING_RUTA_DESTINO
+
+            return [
+                f"Perfecto ✅ Origen: *{origen}*.",
+                "Ahora decime el *destino*."
+            ]
+
+        # Paso 2: esperando destino
+        if session.waiting_for == WAITING_RUTA_DESTINO:
+            destino = lower
+            origen = session.data.get("origen")
+
+            if not origen:
+                # Algo raro pasó, reseteamos el flujo de ruta
+                session.state = STATE_MAIN_MENU
+                session.waiting_for = WAITING_NONE
+                session.data.clear()
+                return [
+                    "Ocurrió un error interno con el origen de la ruta 😕.",
+                    "Volvamos a empezar. Mandá */ayuda* y elegí la opción 1 de nuevo."
+                ]
+
+            # Intentar calcular la ruta
+            if dijkstra is None:
+                mensaje_ruta = [
+                    "⚠️ El cálculo de rutas todavía no está disponible (no se pudo importar coordenadas_gifs.dijkstra).",
+                    "Verificá que el módulo *coordenadas_gifs.py* exista en el proyecto y tenga la función dijkstra(origen, destino)."
+                ]
             else:
-                send_text_message(
-                    self.user_phone,
-                    "❌ Comando no reconocido. Escribe /ayuda para ver las opciones disponibles."
-                )
-        else:
-            send_text_message(
-                self.user_phone,
-                "❌ Por favor usa un comando. Escribe /ayuda para ver opciones."
-            )
+                try:
+                    # Ejemplo: asumimos que dijkstra devuelve (ruta, costo)
+                    ruta, costo = dijkstra(origen, destino)
+
+                    if not ruta:
+                        mensaje_ruta = [
+                            "No se encontró una ruta entre esos puntos 😕.",
+                            "Revisá que el origen y destino existan en el grafo."
+                        ]
+                    else:
+                        ruta_str = " -> ".join(ruta)
+                        mensaje_ruta = [
+                            "📍 *Resultado de la ruta*",
+                            f"• Origen: *{origen}*",
+                            f"• Destino: *{destino}*",
+                            f"• Ruta: {ruta_str}",
+                            f"• Costo total: {costo}",
+                        ]
+
+                except Exception as e:
+                    mensaje_ruta = [
+                        "⚠️ Ocurrió un error al calcular la ruta.",
+                        "Revisá que el origen y destino existan en el grafo y que la función dijkstra funcione correctamente.",
+                        f"Detalle técnico (para debug): {e}"
+                    ]
+
+            # Al terminar, volvemos al menú principal
+            session.state = STATE_MAIN_MENU
+            session.waiting_for = WAITING_NONE
+            session.data.clear()
+
+            mensaje_ruta.append("")
+            mensaje_ruta.append("Si querés hacer otra consulta, mandá */ayuda*.")
+
+            return mensaje_ruta
+
+        # Si por alguna razón el waiting_for no coincide con nada
+        session.state = STATE_MAIN_MENU
+        session.waiting_for = WAITING_NONE
+        session.data.clear()
+        return [
+            "Se perdió el hilo de la conversación de la ruta 😅.",
+            "Mandá /ayuda y elegí la opción 1 para intentarlo de nuevo."
+        ]
 
 
-# ==================== INSTANCIA GLOBAL DEL BOT ====================
-
-bot = Chat()
-
-
-# ==================== FUNCIONES DEL BOT (NODOS DEL GRAFO) ====================
-
-@bot.register("/ayuda")
-def funcion_0_ayuda():
-    """Muestra ayuda básica."""
-    mensaje = (
-        "🤖 ¡Hola! Aquí tienes las opciones disponibles:\n"
-        "/iniciar - Iniciar una nueva conversación\n"
-        "/ayuda - Mostrar este mensaje de ayuda\n"
-    )
-    send_text_message(bot.user_phone, mensaje)
-    # Ejemplo: la próxima respuesta la maneja la función de bienvenida
-    bot.set_waiting_for(funcion_1_bienvenida)
-
-
-@bot.register("/iniciar")
-def funcion_1_bienvenida():
-    """Inicia la conversación con opciones básicas (ejemplo)."""
-    bot.clear_conversation_data()
-
-    mensaje = (
-        "🤖 ¡Bienvenido! ¿Qué deseas hacer?\n\n"
-        "1️⃣ Agregar producto\n"
-        "2️⃣ Consultar stock\n"
-        "3️⃣ Ver historial\n\n"
-        "Por favor responde con el número de tu opción (1, 2 o 3)."
-    )
-    send_text_message(bot.user_phone, mensaje)
-
-    # La próxima respuesta del usuario será manejada por funcion_2_elegir_opcion
-    bot.set_waiting_for(funcion_2_elegir_opcion)
-
-
-def funcion_2_elegir_opcion(mensaje: str):
-    """Recibe la opción del usuario y valida."""
-    opcion = mensaje.strip()
-
-    if opcion in ["1", "2", "3"]:
-        bot.set_conversation_data("opcion_elegida", opcion)
-        funcion_3_responder(opcion)
-    else:
-        send_text_message(
-            bot.user_phone,
-            "❌ Opción inválida. Intenta de nuevo.\nEscribe /iniciar para comenzar de nuevo."
-        )
-        bot.set_waiting_for(funcion_2_elegir_opcion)
-
-
-def funcion_3_responder(opcion: str):
-    """Responde según la opción elegida (ejemplo simple)."""
-
-    if opcion == "1":
-        send_text_message(bot.user_phone, "🛒 Opción 1: aquí iría la lógica para agregar producto.")
-    elif opcion == "2":
-        send_text_message(bot.user_phone, "📦 Opción 2: aquí iría la lógica para consultar stock.")
-    elif opcion == "3":
-        send_text_message(bot.user_phone, "🧾 Opción 3: aquí iría la lógica para ver el historial.")
-
-    # Después de responder, podríamos resetear o volver a /iniciar
-    bot.reset_conversation()
+# Instancia global para que main.py pueda hacer: from chat import bot
+bot = ChatBot()
