@@ -1,2 +1,7 @@
 fastapi
 uvicorn
+requests
+osmnx
+networkx
+matplotlib
+pillow
