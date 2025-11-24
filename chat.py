@@ -318,6 +318,11 @@ class ChatBot:
                         "Representa el camino óptimo entre los puntos seleccionados.",
                     ]
 
+                    from services.whatsapp_client import send_gif_message
+
+                gif_url = f"https://TU-URL-DE-RENDER.onrender.com/{gif}"
+                send_gif_message(session.user_id, gif_url)
+
             except Exception as e:
                 mensaje = [
                     f"❌ Ocurrió un error al ejecutar {algoritmo}.",

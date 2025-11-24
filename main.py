@@ -1,9 +1,13 @@
 from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+
 from chat import bot
 from services.whatsapp_client import send_text_message
 import os
 
 app = FastAPI()
+app.mount("/media", StaticFiles(directory="media"), name="media")
+
 
 # =========================================================
 # CONFIGURACIÓN
@@ -18,6 +22,7 @@ VERIFY_TOKEN = "bot_delivery_YA_2025"
 # 1. ENDPOINT DE VERIFICACIÓN (Meta lo usa al configurar webhook)
 #    -> Ojo: ahora es /whatsapp, no /webhook
 # =========================================================
+
 
 @app.get("/whatsapp")
 async def verify_webhook(request: Request):
@@ -41,6 +46,7 @@ async def verify_webhook(request: Request):
 # 2. ENDPOINT PRINCIPAL PARA RECIBIR MENSAJES DE WHATSAPP
 #    -> También en /whatsapp (POST)
 # =========================================================
+
 
 @app.post("/whatsapp")
 async def receive_message(request: Request):
@@ -75,6 +81,7 @@ async def receive_message(request: Request):
 # 3. FUNCIONES AUXILIARES PARA LEER EL PAYLOAD DE META
 # =========================================================
 
+
 def extraer_wa_id(payload: dict) -> str | None:
     """
     Devuelve el número de WhatsApp del remitente.
@@ -93,6 +100,3 @@ def extraer_texto(payload: dict) -> str | None:
         return payload["entry"][0]["changes"][0]["value"]["messages"][0]["text"]["body"]
     except Exception:
         return None
-
-
-
