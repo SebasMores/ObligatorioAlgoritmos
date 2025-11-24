@@ -5,17 +5,24 @@ import os
 
 app = FastAPI()
 
+# =========================================================
+# CONFIGURACIÓN
+# =========================================================
+
+# En Render deberías tener seteada la variable VERIFY_TOKEN con este valor.
+# Si no está, usa "bot_delivery_YA_2025" por defecto.
 VERIFY_TOKEN = "bot_delivery_YA_2025"
 
 
 # =========================================================
 # 1. ENDPOINT DE VERIFICACIÓN (Meta lo usa al configurar webhook)
+#    -> Ojo: ahora es /whatsapp, no /webhook
 # =========================================================
 
-@app.get("/webhook")
+@app.get("/whatsapp")
 async def verify_webhook(request: Request):
     """
-    Este endpoint lo usa Meta para verificar que tu webhook es válido.
+    Endpoint que usa Meta para verificar el webhook.
     """
     params = request.query_params
 
@@ -24,6 +31,7 @@ async def verify_webhook(request: Request):
     challenge = params.get("hub.challenge")
 
     if mode == "subscribe" and token == VERIFY_TOKEN:
+        # Meta espera que devolvamos el challenge como número
         return int(challenge)
 
     return {"error": "Token inválido"}
@@ -31,27 +39,29 @@ async def verify_webhook(request: Request):
 
 # =========================================================
 # 2. ENDPOINT PRINCIPAL PARA RECIBIR MENSAJES DE WHATSAPP
+#    -> También en /whatsapp (POST)
 # =========================================================
 
-@app.post("/webhook")
+@app.post("/whatsapp")
 async def receive_message(request: Request):
     """
-    Acá llegan TODOS los mensajes que escribe el usuario en WhatsApp.
+    Acá llegan TODOS los mensajes que escriben al número de WhatsApp.
     """
     payload = await request.json()
 
     try:
-        # Extraer el ID del usuario y el texto del mensaje
+        # Extraer el ID de WhatsApp y el texto del mensaje
         wa_id = extraer_wa_id(payload)
         mensaje = extraer_texto(payload)
 
         if not wa_id or not mensaje:
+            # No vino mensaje de texto "normal"
             return {"status": "ignored"}
 
-        # Pasar mensaje al bot (chat.py)
+        # Pasar el mensaje al bot (chat.py)
         respuestas = bot.handle_message(wa_id, mensaje)
 
-        # Enviar cada respuesta por WhatsApp
+        # Enviar cada respuesta al usuario
         for respuesta in respuestas:
             send_text_message(wa_id, respuesta)
 
@@ -67,7 +77,7 @@ async def receive_message(request: Request):
 
 def extraer_wa_id(payload: dict) -> str | None:
     """
-    Obtiene el número de WhatsApp del usuario que envió el mensaje.
+    Devuelve el número de WhatsApp del remitente.
     """
     try:
         return payload["entry"][0]["changes"][0]["value"]["messages"][0]["from"]
@@ -77,11 +87,12 @@ def extraer_wa_id(payload: dict) -> str | None:
 
 def extraer_texto(payload: dict) -> str | None:
     """
-    Obtiene el texto del mensaje que envió el usuario.
+    Devuelve el texto del mensaje enviado por el usuario.
     """
     try:
         return payload["entry"][0]["changes"][0]["value"]["messages"][0]["text"]["body"]
     except Exception:
         return None
+
 
 
