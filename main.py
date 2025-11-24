@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from utils.get_message_type import get_message_type
-from services.whatsapp_client import send_text_message
+from chat import bot
 import os
 
 app = FastAPI()
@@ -9,8 +9,7 @@ app = FastAPI()
 # CONFIGURACIÓN
 # =========================
 
-# Token de verificación del webhook (NO el token de WhatsApp)
-ACCESS_TOKEN = "EAAaYkMbQ47IBP1eE6sLq62XpZCMWy6mHHNFdoWBxjdFDKTEAZBhq7k4IKkba2J7zQzEZBqOjqVPg16HP22PXZCc2c1mlZAvpZCeNzlNSEZCIltHabU8fZBEg2RHQX9lcqvEkUwS7YV9L2Th5UgVgm52Jw1ZBfeoKczfjplPfVdZBArRSZBHAqc4ETaIqCuyHNF3eAZDZD" 
+VERIFY_TOKEN = "bot_delivery_YA_2025"
 
 
 @app.get("/welcome")
@@ -77,12 +76,10 @@ async def received_message(request: Request):
         print(f"Contenido: {content}")
         print("=====================================")
 
-        # RESPUESTA SIMPLE DE PRUEBA
+        # 👉 Aquí enganchamos el Chat
         if type_message == "text":
-            send_text_message(
-                number,
-                "👋 Hola! Recibí tu mensaje correctamente. El bot del restaurante está activo."
-            )
+            bot.user_phone = number
+            bot.process_message(content)
 
         return "EVENT_RECEIVED"
 
@@ -90,6 +87,10 @@ async def received_message(request: Request):
         print("❌ Error procesando mensaje:", str(e))
         return "EVENT_RECEIVED"
 
+
+# =========================
+# EJECUCIÓN LOCAL
+# =========================
 
 if __name__ == "__main__":
     import uvicorn

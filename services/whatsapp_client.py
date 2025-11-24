@@ -1,8 +1,11 @@
 import os
 import requests
 
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")      # tu token de acceso de Meta
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")    # el ID tipo 5009... que te dio Meta
+# Estos los configurás como variables de entorno en Render o en tu .env local
+
+WHATSAPP_TOKEN = "EAAaYkMbQ47IBP1eE6sLq62XpZCMWy6mHHNFdoWBxjdFDKTEAZBhq7k4IKkba2J7zQzEZBqOjqVPg16HP22PXZCc2c1mlZAvpZCeNzlNSEZCIltHabU8fZBEg2RHQX9lcqvEkUwS7YV9L2Th5UgVgm52Jw1ZBfeoKczfjplPfVdZBArRSZBHAqc4ETaIqCuyHNF3eAZDZD" 
+PHONE_NUMBER_ID = "886891177838505"
+
 
 
 def send_text_message(to: str, text: str):
@@ -22,6 +25,7 @@ def send_text_message(to: str, text: str):
 
     data = {
         "messaging_product": "whatsapp",
+        "recipient_type": "individual",
         "to": to,
         "type": "text",
         "text": {
