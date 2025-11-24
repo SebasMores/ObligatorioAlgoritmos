@@ -173,17 +173,12 @@ class ChatBot:
         """
         # Import "lazy" de los algoritmos (no rompe si no existen)
         try:
-            from coordenadas_gifs import dijkstra, a_estrella  # ajustá los nombres si en tu archivo son distintos
+            from coordenadas_gifs import dijkstra_gif, a_star_gif
+            dijkstra = dijkstra_gif
+            a_estrella = a_star_gif
         except ImportError:
-            # Puede fallar el import de uno o de los dos
-            try:
-                from coordenadas_gifs import dijkstra  # intento solo dijkstra
-            except ImportError:
-                dijkstra = None
-            try:
-                from coordenadas_gifs import a_estrella
-            except ImportError:
-                a_estrella = None
+            dijkstra = None
+        a_estrella = None
 
         # ---------- Paso 1: esperando ORIGEN ----------
         if session.waiting_for == WAITING_RUTA_ORIGEN:
