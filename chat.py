@@ -10,6 +10,7 @@ STATE_RUTA = "RUTA"  # Opción 1: calcular ruta
 WAITING_NONE = None
 WAITING_RUTA_ORIGEN = "RUTA_ORIGEN"
 WAITING_RUTA_DESTINO = "RUTA_DESTINO"
+WAITING_RUTA_ALGORITMO = "RUTA_ALGORITMO"  
 
 
 @dataclass
@@ -163,19 +164,33 @@ class ChatBot:
     def _handle_opcion_ruta(self, session: ChatSession, raw: str, lower: str) -> List[str]:
         """
         Flujo de la opción 1: cálculo de ruta con Dijkstra / A*.
-        - Paso 1: pedir ORIGEN
-        - Paso 2: pedir DESTINO
-        - Paso 3: llamar a coordenadas_gifs y mostrar resultado
-        """
-        # Import lazy (por si corre en entorno donde no está todavía el módulo)
-        try:
-            from coordenadas_gifs import dijkstra  # Ajustá el nombre según tu implementación
-        except Exception:
-            dijkstra = None
 
-        # Paso 1: esperando origen
+        Pasos:
+        1) Pedir ORIGEN
+        2) Pedir DESTINO
+        3) Preguntar qué algoritmo usar (Dijkstra o A*)
+        4) Calcular ruta y mostrar resultado
+        """
+        # Import "lazy" de los algoritmos (no rompe si no existen)
+        try:
+            from coordenadas_gifs import dijkstra, a_estrella  # ajustá los nombres si en tu archivo son distintos
+        except ImportError:
+            # Puede fallar el import de uno o de los dos
+            try:
+                from coordenadas_gifs import dijkstra  # intento solo dijkstra
+            except ImportError:
+                dijkstra = None
+            try:
+                from coordenadas_gifs import a_estrella
+            except ImportError:
+                a_estrella = None
+
+        # ---------- Paso 1: esperando ORIGEN ----------
         if session.waiting_for == WAITING_RUTA_ORIGEN:
-            origen = lower  # podés usar raw si querés respetar mayúsculas
+            origen = lower.strip()  # podés usar raw si querés respetar mayúsculas
+            if not origen:
+                return ["No entendí el origen 😅. Probá de nuevo."]
+
             session.data["origen"] = origen
             session.waiting_for = WAITING_RUTA_DESTINO
 
@@ -184,9 +199,9 @@ class ChatBot:
                 "Ahora decime el *destino*."
             ]
 
-        # Paso 2: esperando destino
+        # ---------- Paso 2: esperando DESTINO ----------
         if session.waiting_for == WAITING_RUTA_DESTINO:
-            destino = lower
+            destino = lower.strip()
             origen = session.data.get("origen")
 
             if not origen:
@@ -199,40 +214,136 @@ class ChatBot:
                     "Volvamos a empezar. Mandá */ayuda* y elegí la opción 1 de nuevo."
                 ]
 
-            # Intentar calcular la ruta
-            if dijkstra is None:
-                mensaje_ruta = [
-                    "⚠️ El cálculo de rutas todavía no está disponible (no se pudo importar coordenadas_gifs.dijkstra).",
-                    "Verificá que el módulo *coordenadas_gifs.py* exista en el proyecto y tenga la función dijkstra(origen, destino)."
+            if not destino:
+                return ["No entendí el destino 😅. Probá de nuevo."]
+
+            if destino == origen:
+                return [
+                    "⚠️ El *origen* y el *destino* no pueden ser iguales.",
+                    "Ingresá otro destino distinto, por favor."
                 ]
+
+            # Guardamos destino y pasamos a elegir algoritmo
+            session.data["destino"] = destino
+            session.waiting_for = WAITING_RUTA_ALGORITMO
+
+            return [
+                f"Genial 👍 Destino: *{destino}*.",
+                "",
+                "¿Qué algoritmo querés usar para calcular la ruta?",
+                "1️⃣ Dijkstra (ruta más corta clásica)",
+                "2️⃣ A* (A estrella, suele ser más eficiente)",
+                "",
+                "Respondé *1* o *2*."
+            ]
+
+        # ---------- Paso 3: esperando ELECCIÓN DE ALGORITMO ----------
+        if session.waiting_for == WAITING_RUTA_ALGORITMO:
+            origen = session.data.get("origen")
+            destino = session.data.get("destino")
+
+            if not origen or not destino:
+                session.state = STATE_MAIN_MENU
+                session.waiting_for = WAITING_NONE
+                session.data.clear()
+                return [
+                    "Se perdió el origen o destino de la ruta 😕.",
+                    "Mandá /ayuda y volvé a elegir la opción 1."
+                ]
+
+            # Determinar qué algoritmo eligió el usuario
+            algoritmo = None
+            nombre_algoritmo = ""
+
+            if lower in ("1", "dijkstra"):
+                algoritmo = "dijkstra"
+                nombre_algoritmo = "Dijkstra"
+            elif lower in ("2", "a*", "a estrella", "a-estrella", "a_estrella"):
+                algoritmo = "a_estrella"
+                nombre_algoritmo = "A* (A estrella)"
             else:
-                try:
-                    # Ejemplo: asumimos que dijkstra devuelve (ruta, costo)
-                    ruta, costo = dijkstra(origen, destino)
+                return [
+                    "No entendí el algoritmo que elegiste 😅.",
+                    "Respondé *1* para Dijkstra o *2* para A*."
+                ]
 
-                    if not ruta:
-                        mensaje_ruta = [
-                            "No se encontró una ruta entre esos puntos 😕.",
-                            "Revisá que el origen y destino existan en el grafo."
-                        ]
-                    else:
-                        ruta_str = " -> ".join(ruta)
-                        mensaje_ruta = [
-                            "📍 *Resultado de la ruta*",
-                            f"• Origen: *{origen}*",
-                            f"• Destino: *{destino}*",
-                            f"• Ruta: {ruta_str}",
-                            f"• Costo total: {costo}",
-                        ]
-
-                except Exception as e:
+            # ---------- Cálculo de la ruta ----------
+            if algoritmo == "dijkstra":
+                if dijkstra is None:
                     mensaje_ruta = [
-                        "⚠️ Ocurrió un error al calcular la ruta.",
-                        "Revisá que el origen y destino existan en el grafo y que la función dijkstra funcione correctamente.",
-                        f"Detalle técnico (para debug): {e}"
+                        "⚠️ No se pudo usar Dijkstra porque no se encontró la función `dijkstra` en *coordenadas_gifs.py*.",
+                        "Revisá el nombre de la función en ese archivo."
                     ]
+                else:
+                    try:
+                        # AJUSTÁ ESTO si tu dijkstra tiene otra firma o devuelve algo distinto
+                        ruta, costo = dijkstra(origen, destino)
 
-            # Al terminar, volvemos al menú principal
+                        if not ruta:
+                            mensaje_ruta = [
+                                "No se encontró una ruta entre esos puntos 😕.",
+                                "Revisá que el origen y destino existan en el grafo."
+                            ]
+                        else:
+                            ruta_str = " -> ".join(ruta)
+                            mensaje_ruta = [
+                                f"🧮 Algoritmo usado: *{nombre_algoritmo}*",
+                                "",
+                                "📍 *Resultado de la ruta*",
+                                f"• Origen: *{origen}*",
+                                f"• Destino: *{destino}*",
+                                f"• Ruta: {ruta_str}",
+                                f"• Costo total: {costo}",
+                            ]
+                    except Exception as e:
+                        mensaje_ruta = [
+                            "⚠️ Ocurrió un error al calcular la ruta con Dijkstra.",
+                            "Revisá que el origen y destino existan en el grafo y que la función `dijkstra` funcione correctamente.",
+                            f"Detalle técnico (para debug): {e}"
+                        ]
+
+            elif algoritmo == "a_estrella":
+                if a_estrella is None:
+                    mensaje_ruta = [
+                        "⚠️ El algoritmo A* no está disponible porque no se encontró la función `a_estrella` en *coordenadas_gifs.py*.",
+                        "Podés implementarlo o corregir el nombre de la función en ese archivo."
+                    ]
+                else:
+                    try:
+                        # AJUSTÁ ESTO si tu A* tiene otra firma o devuelve algo distinto
+                        ruta, costo = a_estrella(origen, destino)
+
+                        if not ruta:
+                            mensaje_ruta = [
+                                "No se encontró una ruta entre esos puntos 😕.",
+                                "Revisá que el origen y destino existan en el grafo."
+                            ]
+                        else:
+                            ruta_str = " -> ".join(ruta)
+                            mensaje_ruta = [
+                                f"🧮 Algoritmo usado: *{nombre_algoritmo}*",
+                                "",
+                                "📍 *Resultado de la ruta*",
+                                f"• Origen: *{origen}*",
+                                f"• Destino: *{destino}*",
+                                f"• Ruta: {ruta_str}",
+                                f"• Costo total: {costo}",
+                            ]
+                    except Exception as e:
+                        mensaje_ruta = [
+                            "⚠️ Ocurrió un error al calcular la ruta con A*.",
+                            "Revisá que el origen y destino existan en el grafo y que la función `a_estrella` funcione correctamente.",
+                            f"Detalle técnico (para debug): {e}"
+                        ]
+
+            else:
+                # Esto no debería pasar, pero por las dudas
+                mensaje_ruta = [
+                    "Se produjo un error inesperado al elegir el algoritmo 😕.",
+                    "Probá de nuevo mandando /ayuda y eligiendo la opción 1."
+                ]
+
+            # ---------- Reset de estado y vuelta al menú ----------
             session.state = STATE_MAIN_MENU
             session.waiting_for = WAITING_NONE
             session.data.clear()
@@ -242,7 +353,7 @@ class ChatBot:
 
             return mensaje_ruta
 
-        # Si por alguna razón el waiting_for no coincide con nada
+        # ---------- Fallback si el waiting_for no coincide ----------
         session.state = STATE_MAIN_MENU
         session.waiting_for = WAITING_NONE
         session.data.clear()
