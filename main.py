@@ -6,6 +6,7 @@ from services.whatsapp_client import send_text_message
 import os
 
 app = FastAPI()
+os.makedirs("media", exist_ok=True)
 app.mount("/media", StaticFiles(directory="media"), name="media")
 
 
