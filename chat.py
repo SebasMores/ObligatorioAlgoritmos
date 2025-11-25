@@ -315,11 +315,15 @@ class ChatBot:
                     # URL pública del GIF (reemplazá por tu URL real de Render)
                     gif_url = f"https://TU-APP-EN-RENDER.onrender.com/{gif}"
 
+                    from services.whatsapp_client import send_gif_message
+
                     mensaje = [
-                        f"✅ Ruta calculada con *{nombre_algoritmo}* correctamente.",
-                        "🗺️ Se generó el GIF del recorrido.",
-                        f"🔗 Podés verlo acá: {gif_url}",
+                    f"✅ Ruta calculada con *{nombre_algoritmo}* correctamente.",
+                    "🗺️ Se generó el GIF del recorrido.",
+                    "📲 Te lo envío ahora mismo 👇",
                     ]
+
+                send_gif_message(session.data.get("wa_id"), gif_url)
                     # Si más adelante guardás el wa_id en la sesión,
                     # acá podrías llamar a send_gif_message(wa_id, gif_url)
 
