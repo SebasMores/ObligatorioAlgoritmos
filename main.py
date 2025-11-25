@@ -66,6 +66,8 @@ async def receive_message(request: Request):
 
         # Pasar el mensaje al bot (chat.py)
         respuestas = bot.handle_message(wa_id, mensaje)
+        session = bot._get_session(wa_id)
+        session.data["wa_id"] = wa_id
 
         # Enviar cada respuesta al usuario
         for respuesta in respuestas:
