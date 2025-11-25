@@ -243,10 +243,8 @@ class ChatBot:
 
             # Elegir algoritmo
             if lower == "1":
-                algoritmo = "Dijkstra"
                 usar_dijkstra = True
             elif lower == "2":
-                algoritmo = "A*"
                 usar_dijkstra = False
             else:
                 return [
@@ -254,7 +252,7 @@ class ChatBot:
                     "Respondé *1* para Dijkstra o *2* para A*.",
                 ]
 
-            # --- Acá recién importamos cosas pesadas ---
+            # --- Importar cosas pesadas ---
             try:
                 from coordenadas_gifs import (
                     dijkstra_gif,
@@ -301,35 +299,37 @@ class ChatBot:
                     dijkstra_gif(origen_nodo, destino_nodo)
                     ok = reconstruct_path_gif(origen_nodo, destino_nodo, "Dijkstra")
                     gif = create_gif("Dijkstra")
+                    nombre_algoritmo = "Dijkstra"
                 else:
                     a_star_gif(origen_nodo, destino_nodo)
                     ok = reconstruct_path_gif(origen_nodo, destino_nodo, "A_Star")
                     gif = create_gif("A_Star")
+                    nombre_algoritmo = "A*"
 
-                if not ok:
+                if not ok or not gif:
                     mensaje = [
-                        f"⚠️ No se pudo reconstruir el camino con {algoritmo}.",
+                        f"⚠️ No se pudo reconstruir el camino con {nombre_algoritmo}.",
                         "Revisá si el grafo tiene conexión entre esos puntos.",
                     ]
                 else:
+                    # URL pública del GIF (reemplazá por tu URL real de Render)
+                    gif_url = f"https://TU-APP-EN-RENDER.onrender.com/{gif}"
+
                     mensaje = [
-                        f"✅ Ruta calculada con *{algoritmo}* correctamente.",
-                        f"📁 Se generó un GIF del recorrido: `{gif}` (en el servidor).",
-                        "Representa el camino óptimo entre los puntos seleccionados.",
+                        f"✅ Ruta calculada con *{nombre_algoritmo}* correctamente.",
+                        "🗺️ Se generó el GIF del recorrido.",
+                        f"🔗 Podés verlo acá: {gif_url}",
                     ]
-
-                    from services.whatsapp_client import send_gif_message
-
-                gif_url = f"https://TU-URL-DE-RENDER.onrender.com/{gif}"
-                send_gif_message(session.user_id, gif_url)
+                    # Si más adelante guardás el wa_id en la sesión,
+                    # acá podrías llamar a send_gif_message(wa_id, gif_url)
 
             except Exception as e:
                 mensaje = [
-                    f"❌ Ocurrió un error al ejecutar {algoritmo}.",
+                    "❌ Ocurrió un error al ejecutar el algoritmo de ruta.",
                     f"Detalle técnico: {e}",
                 ]
 
-            # Reset de estado
+            # Reset de estado siempre después de calcular
             session.state = STATE_MAIN_MENU
             session.waiting_for = WAITING_NONE
             session.data.clear()
@@ -339,7 +339,7 @@ class ChatBot:
 
             return mensaje
 
-        # ---------- Fallback ----------
+        # ---------- Fallback si el waiting_for no coincide ----------
         session.state = STATE_MAIN_MENU
         session.waiting_for = WAITING_NONE
         session.data.clear()
