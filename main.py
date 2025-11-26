@@ -65,10 +65,16 @@ async def receive_message(request: Request):
             # No vino mensaje de texto "normal"
             return {"status": "ignored"}
 
-        # Pasar el mensaje al bot (chat.py)
-        respuestas = bot.handle_message(wa_id, mensaje)
+        # 1) Obtener la sesión y guardar el wa_id
         session = bot._get_session(wa_id)
         session.data["wa_id"] = wa_id
+
+        #2) Recién después procesar el mensaje
+        respuestas = bot.handle_message(wa_id, mensaje)
+
+        # 3) Enviar las respuestas de texto
+        for r in respuestas:
+            send_text_message(wa_id, r)
 
         # Enviar cada respuesta al usuario
         for respuesta in respuestas:

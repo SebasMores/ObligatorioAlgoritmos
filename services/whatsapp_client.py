@@ -57,7 +57,7 @@ def send_gif_message(to: str, gif_url: str):
         "messaging_product": "whatsapp",
         "to": to,
         "type": "image",
-        "image": {"link": gif_url},
+        "image": {"link": },
     }
 
     try:

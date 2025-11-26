@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 
+from services.whatsapp_client import send_gif_message
+
 # Estados de la conversación
 STATE_IDLE = "IDLE"
 STATE_MAIN_MENU = "MAIN_MENU"
@@ -306,26 +308,26 @@ class ChatBot:
                     gif = create_gif("A_Star")
                     nombre_algoritmo = "A*"
 
-                if not ok or not gif:
+                if ok and gif:
+                    # URL pública del GIF (cambiá por tu URL real de Render)
+                    gif_url = f"https://obligatorioalgoritmos-dpv1.onrender.com/{gif}"
+
                     mensaje = [
-                        f"⚠️ No se pudo reconstruir el camino con {nombre_algoritmo}.",
-                        "Revisá si el grafo tiene conexión entre esos puntos.",
+                        f"✅ Ruta calculada con *{nombre_algoritmo}* correctamente.",
+                        "🗺️ Se generó el GIF del recorrido.",
+                        "📲 Te lo envío ahora mismo 👇",
                     ]
+
+                    wa_id = session.data.get("wa_id")
+                    if wa_id:
+                        try:
+                            send_gif_message(wa_id, gif_url)
+                        except Exception as e:
+                            print("❌ Error enviando GIF:", e)
                 else:
-                    # URL pública del GIF (reemplazá por tu URL real de Render)
-                    gif_url = f"https://TU-APP-EN-RENDER.onrender.com/{gif}"
-
-                    from services.whatsapp_client import send_gif_message
-
                     mensaje = [
-                    f"✅ Ruta calculada con *{nombre_algoritmo}* correctamente.",
-                    "🗺️ Se generó el GIF del recorrido.",
-                    "📲 Te lo envío ahora mismo 👇",
+                        f"⚠️ No se pudo generar la ruta con {nombre_algoritmo}.",
                     ]
-
-                send_gif_message(session.data.get("wa_id"), gif_url)
-                    # Si más adelante guardás el wa_id en la sesión,
-                    # acá podrías llamar a send_gif_message(wa_id, gif_url)
 
             except Exception as e:
                 mensaje = [
