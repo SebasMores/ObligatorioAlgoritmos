@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 
 # Estados de la conversación
-STATE_IDLE = "IDLE"
+STATE_IDLE = "STATE_IDLE"
 STATE_MAIN_MENU = "MAIN_MENU"
 STATE_RUTA = "RUTA"
 
@@ -32,16 +32,15 @@ class ChatBot:
         self.sessions: Dict[str, ChatSession] = {}
 
     # --------- Gestión de sesiones ---------
-
     def _get_session(self, user_id: str) -> ChatSession:
         if user_id not in self.sessions:
             self.sessions[user_id] = ChatSession()
         return self.sessions[user_id]
 
     # --------- API pública ---------
-
     def handle_message(self, user_id: str, text: str) -> List[str]:
         session = self._get_session(user_id)
+
         text = text or ""
         raw = text.strip()
         lower = raw.lower()
@@ -103,7 +102,6 @@ class ChatBot:
         ]
 
     # --------- Handlers internos ---------
-
     def _handle_ayuda(self, session: ChatSession) -> List[str]:
         """
         Muestra el menú principal y prepara el estado MAIN_MENU.
@@ -130,7 +128,6 @@ class ChatBot:
             session.state = STATE_RUTA
             session.waiting_for = WAITING_RUTA_ORIGEN
             session.data.clear()
-
             return [
                 "🛵 Vamos a calcular la *ruta de delivery*.",
                 "Escribí el *origen* (ejemplo: plaza artigas, terminal, hospital, centro, shopping).",
@@ -154,9 +151,11 @@ class ChatBot:
         ]
 
     # ================= OPCIÓN 1: RUTA =================
-
     def _handle_opcion_ruta(
-        self, session: ChatSession, raw: str, lower: str
+        self,
+        session: ChatSession,
+        raw: str,
+        lower: str,
     ) -> List[str]:
         """
         Flujo de la opción 1: cálculo de ruta con Dijkstra / A*.
@@ -281,10 +280,14 @@ class ChatBot:
             # Convertir coordenadas a nodos del grafo
             try:
                 origen_nodo = ox.distance.nearest_nodes(
-                    G, orig_coord[1], orig_coord[0]
+                    G,
+                    orig_coord[1],
+                    orig_coord[0],
                 )  # (lon, lat)
                 destino_nodo = ox.distance.nearest_nodes(
-                    G, dest_coord[1], dest_coord[0]
+                    G,
+                    dest_coord[1],
+                    dest_coord[0],
                 )
             except Exception as e:
                 session.state = STATE_MAIN_MENU
@@ -300,7 +303,7 @@ class ChatBot:
                 if usar_dijkstra:
                     dijkstra_gif(origen_nodo, destino_nodo)
                     ok = reconstruct_path_gif(origen_nodo, destino_nodo, "Dijkstra")
-                    algoritmo = "Dijkstr"
+                    algoritmo = "Dijkstra"
                 else:
                     a_star_gif(origen_nodo, destino_nodo)
                     ok = reconstruct_path_gif(origen_nodo, destino_nodo, "A_Star")
@@ -315,9 +318,8 @@ class ChatBot:
                     mensaje = [
                         f"✅ Ruta calculada con *{algoritmo}* correctamente.",
                         "📍 El recorrido óptimo fue procesado.",
-                        "ℹ️ El GIF animado se generó localmente para visualización.",
+                        "ℹ️ El GIF animado se genera localmente para visualización.",
                     ]
-
             except Exception as e:
                 mensaje = [
                     f"❌ Ocurrió un error al ejecutar {algoritmo}.",
@@ -325,8 +327,7 @@ class ChatBot:
                 ]
 
             # Reset de estado
-            # Reset de estado: lo dejamos “en reposo”
-            session.state = STATE_IDLE
+            session.state = STATE_MAIN_MENU
             session.waiting_for = WAITING_NONE
             session.data.clear()
 
@@ -339,6 +340,7 @@ class ChatBot:
         session.state = STATE_MAIN_MENU
         session.waiting_for = WAITING_NONE
         session.data.clear()
+
         return [
             "Se perdió el flujo de la ruta 😅.",
             "Mandá /ayuda y elegí la opción 1 para reintentar.",

@@ -30,6 +30,7 @@ async def whatsapp_webhook(request: Request):
     """
     try:
         body = await request.json()
+        # print("BODY:", body)  # útil para debug
 
         entry = body.get("entry", [])
         if not entry:
@@ -42,18 +43,18 @@ async def whatsapp_webhook(request: Request):
         value = changes[0].get("value", {})
         messages = value.get("messages", [])
         if not messages:
-            # No hay mensajes (puede ser status, etc.)
+            # No hay mensajes (puede ser un evento de status, etc.)
             return {"status": "no_messages"}
 
-        # 👇 ESTE ES EL MENSAJE QUE LLEGA DE WHATSAPP
         message = messages[0]
         wa_id = message.get("from")  # número de WhatsApp del usuario
 
-        # Obtenemos el texto según el tipo
+        # Obtenemos el texto independientemente del tipo
         msg_type = message.get("type")
         if msg_type == "text":
             text = message["text"]["body"]
         elif msg_type == "interactive":
+            # Si es una respuesta a un botón/lista interactiva
             interactive = message.get("interactive", {})
             if "button_reply" in interactive:
                 text = interactive["button_reply"]["title"]
@@ -62,12 +63,13 @@ async def whatsapp_webhook(request: Request):
             else:
                 text = ""
         else:
+            # Tipos no manejados (audio, imagen, etc.)
             text = ""
 
         if not text:
+            # Si no hay texto entendible, no hacemos nada complejo
             send_text_message(
-                wa_id,
-                "Solo puedo procesar mensajes de texto por ahora 🙂",
+                wa_id, "Solo puedo procesar mensajes de texto por ahora 🙂"
             )
             return {"status": "no_text"}
 
