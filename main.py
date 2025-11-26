@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query
 from fastapi.responses import PlainTextResponse
 from services.whatsapp_client import send_text_message
 from chat import bot
+
 
 app = FastAPI()
 
@@ -15,11 +16,15 @@ async def root():
 
 @app.get("/whatsapp")
 async def verify_webhook(
-    hub_mode: str | None = None,
-    hub_challenge: str | None = None,
-    hub_verify_token: str | None = None,
+    hub_mode: str = Query(None, alias="hub.mode"),
+    hub_challenge: str = Query(None, alias="hub.challenge"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token"),
 ):
+    # Solo para ver en logs que llega de Meta
+    print("GET /whatsapp verify:", hub_mode, hub_verify_token, hub_challenge)
+
     if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
+        # Meta espera que devolvamos EXACTAMENTE el challenge
         return PlainTextResponse(hub_challenge or "", status_code=200)
 
     return PlainTextResponse("Error de verificación", status_code=403)
