@@ -2,11 +2,85 @@ from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 from services.whatsapp_client import send_text_message
 from chat import bot
-import os
+import asyncio
 
 app = FastAPI()
 
 VERIFY_TOKEN = "bot_delivery_YA_2025"
+
+
+# ================== COLA DE MENSAJES 10s ==================
+
+
+class MessageAggregator:
+    """
+    Maneja una cola de mensajes por usuario.
+    Por cada mensaje:
+      - se agrega al buffer de ese user_id
+      - se resetea un timer de 10s
+    Si pasan 10s sin mensajes nuevos:
+      - se concatenan los textos
+      - se llama al callback de procesamiento
+    """
+
+    def __init__(self):
+        # user_id -> {"texts": [str, ...], "task": asyncio.Task}
+        self._buffers: dict[str, dict] = {}
+
+    async def add_message(self, user_id: str, text: str, process_callback):
+        buf = self._buffers.get(user_id)
+
+        if buf is None:
+            buf = {"texts": [], "task": None}
+            self._buffers[user_id] = buf
+
+        buf["texts"].append(text)
+
+        # Si ya había un timer corriendo, lo cancelamos
+        task: asyncio.Task | None = buf.get("task")
+        if task is not None and not task.done():
+            task.cancel()
+
+        # Lanzamos un nuevo timer de 10 segundos
+        buf["task"] = asyncio.create_task(
+            self._wait_and_process(user_id, process_callback)
+        )
+
+    async def _wait_and_process(self, user_id: str, process_callback):
+        try:
+            # Esperar 10 segundos desde el último mensaje
+            await asyncio.sleep(10)
+
+            buf = self._buffers.pop(user_id, None)
+            if not buf:
+                return
+
+            combined_text = " ".join(buf["texts"]).strip()
+            if not combined_text:
+                return
+
+            # Llamamos al callback que procesa de verdad el mensaje
+            await process_callback(user_id, combined_text)
+
+        except asyncio.CancelledError:
+            # El timer se canceló porque llegó un nuevo mensaje
+            return
+
+
+message_aggregator = MessageAggregator()
+
+
+async def process_user_message(user_id: str, text: str):
+    """
+    Esta función se ejecuta recién cuando pasan 10s sin mensajes nuevos.
+    Aquí sí llamamos al bot y mandamos las respuestas.
+    """
+    respuestas = bot.handle_message(user_id, text)
+    for r in respuestas:
+        send_text_message(user_id, r)
+
+
+# ================== ENDPOINTS WHATSAPP ==================
 
 
 @app.get("/whatsapp")
@@ -49,39 +123,43 @@ async def whatsapp_webhook(request: Request):
         message = messages[0]
         wa_id = message.get("from")  # número de WhatsApp del usuario
 
-        # Obtenemos el texto independientemente del tipo
         msg_type = message.get("type")
+        text = ""
+
         if msg_type == "text":
-            text = message["text"]["body"]
+            # Mensaje de texto normal
+            text = message.get("text", {}).get("body", "")
+
         elif msg_type == "interactive":
-            # Si es una respuesta a un botón/lista interactiva
+            # Respuestas de botones/listas interactivas
             interactive = message.get("interactive", {})
             if "button_reply" in interactive:
-                text = interactive["button_reply"]["title"]
+                # Podés usar title o id; más adelante nos va a interesar el id
+                text = interactive["button_reply"].get("id") or interactive[
+                    "button_reply"
+                ].get("title", "")
             elif "list_reply" in interactive:
-                text = interactive["list_reply"]["title"]
-            else:
-                text = ""
+                text = interactive["list_reply"].get("id") or interactive[
+                    "list_reply"
+                ].get("title", "")
+
         else:
-            # Tipos no manejados (audio, imagen, etc.)
+            # Tipos no manejados (audio, imagen, etc.) por ahora
             text = ""
 
         if not text:
             # Si no hay texto entendible, no hacemos nada complejo
             send_text_message(
-                wa_id, "Solo puedo procesar mensajes de texto por ahora 🙂"
+                wa_id,
+                "Solo puedo procesar mensajes de texto o respuestas interactivas por ahora 🙂",
             )
             return {"status": "no_text"}
 
-        # Pasar el mensaje al bot (chat.py)
-        text = message["text"]["body"]
-        respuestas = bot.handle_message(wa_id, text)
+        # En vez de procesar de una, lo mandamos al agregador de 10 segundos
+        await message_aggregator.add_message(wa_id, text, process_user_message)
 
-        # Enviar todas las respuestas como mensajes de texto
-        for r in respuestas:
-            send_text_message(wa_id, r)
-
-        return {"status": "ok"}
+        # Respondemos al webhook rápido; el procesamiento real se hará luego
+        return {"status": "queued"}
 
     except Exception as e:
         print("Error procesando mensaje:", e)
