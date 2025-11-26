@@ -74,7 +74,7 @@ async def whatsapp_webhook(request: Request):
             return {"status": "no_text"}
 
         # Pasar el mensaje al bot (chat.py)
-        texto = message["text"]["body"]
+        text = message["text"]["body"]
         respuestas = bot.handle_message(wa_id, text)
 
         # Enviar todas las respuestas como mensajes de texto
