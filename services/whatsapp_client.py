@@ -8,7 +8,7 @@ PHONE_NUMBER_ID = "886891177838505"
 
 def send_text_message(to: str, text: str):
     """
-    Envía un mensaje de texto simple por WhatsApp al número 'to'.
+    Envía un mensaje de simple por WhatsApp al número 'to'.
     """
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
         print("⚠️ Falta configurar WHATSAPP_TOKEN o PHONE_NUMBER_ID")

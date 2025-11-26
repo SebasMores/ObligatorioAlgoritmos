@@ -6,7 +6,7 @@ import os
 
 app = FastAPI()
 
-VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "mivertoken")  # poné aquí el tuyo si querés
+VERIFY_TOKEN = "bot_delivery_YA_2025"
 
 
 @app.get("/whatsapp")
@@ -74,6 +74,7 @@ async def whatsapp_webhook(request: Request):
             return {"status": "no_text"}
 
         # Pasar el mensaje al bot (chat.py)
+        texto = message["text"]["body"]
         respuestas = bot.handle_message(wa_id, text)
 
         # Enviar todas las respuestas como mensajes de texto

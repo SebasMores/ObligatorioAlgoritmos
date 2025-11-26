@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 
 # Estados de la conversación
-STATE_IDLE = "STATE_IDLE"
+STATE_IDLE = "IDLE"
 STATE_MAIN_MENU = "MAIN_MENU"
 STATE_RUTA = "RUTA"
 
@@ -61,6 +61,7 @@ class ChatBot:
             session.state = STATE_IDLE
             session.waiting_for = WAITING_NONE
             session.data.clear()
+
             return [
                 "👋 ¡Hola! Soy el bot del obligatorio de Algoritmos y Estructuras de Datos.",
                 "Usá el comando */ayuda* para ver las opciones disponibles.",
@@ -70,6 +71,7 @@ class ChatBot:
             session.state = STATE_IDLE
             session.waiting_for = WAITING_NONE
             session.data.clear()
+
             return [
                 "🔄 Conversación reiniciada.",
                 "Mandá /ayuda para ver el menú de opciones.",
@@ -96,6 +98,7 @@ class ChatBot:
         session.state = STATE_IDLE
         session.waiting_for = WAITING_NONE
         session.data.clear()
+
         return [
             "Se produjo un pequeño error en la conversación 😅",
             "Mandá /ayuda para empezar de nuevo.",
@@ -128,6 +131,7 @@ class ChatBot:
             session.state = STATE_RUTA
             session.waiting_for = WAITING_RUTA_ORIGEN
             session.data.clear()
+
             return [
                 "🛵 Vamos a calcular la *ruta de delivery*.",
                 "Escribí el *origen* (ejemplo: plaza artigas, terminal, hospital, centro, shopping).",
@@ -152,10 +156,7 @@ class ChatBot:
 
     # ================= OPCIÓN 1: RUTA =================
     def _handle_opcion_ruta(
-        self,
-        session: ChatSession,
-        raw: str,
-        lower: str,
+        self, session: ChatSession, raw: str, lower: str
     ) -> List[str]:
         """
         Flujo de la opción 1: cálculo de ruta con Dijkstra / A*.
@@ -235,12 +236,12 @@ class ChatBot:
                 session.state = STATE_MAIN_MENU
                 session.waiting_for = WAITING_NONE
                 session.data.clear()
+
                 return [
                     "Se perdió el origen o el destino en la conversación 😕.",
                     "Mandá /ayuda y volvé a elegir la opción 1.",
                 ]
 
-            # Elegir algoritmo
             if lower == "1":
                 algoritmo = "Dijkstra"
                 usar_dijkstra = True
@@ -253,7 +254,6 @@ class ChatBot:
                     "Respondé *1* para Dijkstra o *2* para A*.",
                 ]
 
-            # --- Acá recién importamos cosas pesadas ---
             try:
                 from coordenadas_gifs import (
                     dijkstra_gif,
@@ -267,38 +267,31 @@ class ChatBot:
                 session.state = STATE_MAIN_MENU
                 session.waiting_for = WAITING_NONE
                 session.data.clear()
+
                 return [
                     "❌ Error interno al cargar el módulo de rutas.",
                     f"Detalle técnico: {e}",
                     "Avisale al profe que revise las dependencias (osmnx, networkx, etc.).",
                 ]
 
-            # Convertir nombres a coordenadas
-            orig_coord = lugares[origen_nombre]  # (lat, lon)
-            dest_coord = lugares[destino_nombre]  # (lat, lon)
+            orig_coord = lugares[origen_nombre]
+            dest_coord = lugares[destino_nombre]
 
-            # Convertir coordenadas a nodos del grafo
             try:
-                origen_nodo = ox.distance.nearest_nodes(
-                    G,
-                    orig_coord[1],
-                    orig_coord[0],
-                )  # (lon, lat)
+                origen_nodo = ox.distance.nearest_nodes(G, orig_coord[1], orig_coord[0])
                 destino_nodo = ox.distance.nearest_nodes(
-                    G,
-                    dest_coord[1],
-                    dest_coord[0],
+                    G, dest_coord[1], dest_coord[0]
                 )
             except Exception as e:
                 session.state = STATE_MAIN_MENU
                 session.waiting_for = WAITING_NONE
                 session.data.clear()
+
                 return [
                     "❌ Error al buscar nodos en el mapa de Salto.",
                     f"Detalle técnico: {e}",
                 ]
 
-            # Ejecutar algoritmo correspondiente
             try:
                 if usar_dijkstra:
                     dijkstra_gif(origen_nodo, destino_nodo)
@@ -320,14 +313,14 @@ class ChatBot:
                         "📍 El recorrido óptimo fue procesado.",
                         "ℹ️ El GIF animado se genera localmente para visualización.",
                     ]
+
             except Exception as e:
                 mensaje = [
                     f"❌ Ocurrió un error al ejecutar {algoritmo}.",
                     f"Detalle técnico: {e}",
                 ]
 
-            # Reset de estado
-            session.state = STATE_MAIN_MENU
+            session.state = STATE_IDLE
             session.waiting_for = WAITING_NONE
             session.data.clear()
 
@@ -336,8 +329,7 @@ class ChatBot:
 
             return mensaje
 
-        # ---------- Fallback ----------
-        session.state = STATE_MAIN_MENU
+        session.state = STATE_IDLE
         session.waiting_for = WAITING_NONE
         session.data.clear()
 
@@ -347,5 +339,6 @@ class ChatBot:
         ]
 
 
-# Instancia global para que main.py pueda hacer: from chat import bot
+# Instancia global para que main.py pueda hacer:
+# from chat import bot
 bot = ChatBot()

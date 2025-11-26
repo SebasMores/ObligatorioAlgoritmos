@@ -3,9 +3,9 @@ def get_message_type(message):
     message_type = message["type"]
 
     if message_type == "text":
-        # Extrae el texto para un mensaje de texto simple
+        # Extrae el para un mensaje de simple
         content = message["text"]["body"]
-    
+
     elif message_type == "interactive":
         # Procesa mensajes interactivos (botones o listas)
         interactive_object = message["interactive"]
@@ -19,9 +19,9 @@ def get_message_type(message):
             content = interactive_object["list_reply"]["id"]
         else:
             print("sin mensaje")
-    
+
     else:
-        # Maneja otros tipos de mensajes que no son texto ni interactivos
+        # Maneja otros tipos de mensajes que no son ni interactivos
         print("sin mensaje")
 
     return message_type, content
