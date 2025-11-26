@@ -68,7 +68,8 @@ def send_gif_message(to: str, gif_url: str):
     except Exception as e:
         print("❌ Error enviando GIF a WhatsApp:", str(e))
 
-        def send_interactive_list_message(
+
+def send_interactive_list_message(
     to: str,
     header_text: str,
     body_text: str,
@@ -131,4 +132,3 @@ def send_gif_message(to: str, gif_url: str):
         print("Respuesta:", resp.text)
     except Exception as e:
         print("❌ Error enviando LIST a WhatsApp:", str(e))
-
