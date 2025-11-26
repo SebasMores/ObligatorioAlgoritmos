@@ -53,8 +53,10 @@ async def whatsapp_webhook(request: Request):
         # --------- OBTENER SESIÓN Y FILTRAR DUPLICADOS ---------
         session = bot._get_session(wa_id)
 
+        if not hasattr(session, "last_message_id"):
+            session.last_message_id = None
+
         if session.last_message_id == msg_id:
-            # Ya procesamos este mensaje antes, lo ignoramos
             print("🔁 Mensaje duplicado ignorado:", msg_id)
             return {"status": "duplicate_ignored"}
 
