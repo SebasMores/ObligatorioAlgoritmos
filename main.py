@@ -48,24 +48,6 @@ async def whatsapp_webhook(request: Request):
         # 👇 ESTE ES EL MENSAJE QUE LLEGA DE WHATSAPP
         message = messages[0]
         wa_id = message.get("from")  # número de WhatsApp del usuario
-        msg_id = message.get("id")  # ⚠️ ID ÚNICO DEL MENSAJE
-
-        # --------- OBTENER SESIÓN Y FILTRAR DUPLICADOS ---------
-        session = bot._get_session(wa_id)
-
-        if not hasattr(session, "last_message_id"):
-            session.last_message_id = None
-
-        if session.last_message_id == msg_id:
-            print("🔁 Mensaje duplicado ignorado:", msg_id)
-            return {"status": "duplicate_ignored"}
-
-        # Guardamos el último id procesado
-        session.last_message_id = msg_id
-
-        # (opcional) Guardar el wa_id por si alguna vez lo necesitás en chat.py
-        session.data["wa_id"] = wa_id
-        # -------------------------------------------------------
 
         # Obtenemos el texto según el tipo
         msg_type = message.get("type")
