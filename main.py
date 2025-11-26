@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Query
+from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 from services.whatsapp_client import send_text_message
 from chat import bot
@@ -17,31 +17,29 @@ async def root():
 # ---------- GET /whatsapp (verificación del webhook) ----------
 @app.get("/whatsapp")
 async def verify_webhook(
-    hub_mode: str = Query(None, alias="hub.mode"),
-    hub_challenge: str = Query(None, alias="hub.challenge"),
-    hub_verify_token: str = Query(None, alias="hub.verify_token"),
+    hub_mode: str | None = None,
+    hub_challenge: str | None = None,
+    hub_verify_token: str | None = None,
 ):
     """
-    Meta llama a este endpoint con un GET para verificar el webhook.
-    Usa los parámetros: hub.mode, hub.challenge, hub.verify_token
+    Verificación del webhook de Meta.
+    Esto permite probar tanto con hub.mode como con hub_mode, etc.
     """
-    # Aceptamos sólo si el modo es "subscribe" y el token coincide
+    # Log simple para ver qué llega (opcional)
+    print("GET /whatsapp params:", hub_mode, hub_verify_token, hub_challenge)
+
     if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
-        # devolvemos el challenge tal cual lo manda Meta
         return PlainTextResponse(hub_challenge or "", status_code=200)
 
     return PlainTextResponse("Error de verificación", status_code=403)
 
 
-# ---------- POST /whatsapp (mensajes que llegan de WhatsApp) ----------
+# ---------- POST /whatsapp (mensajes desde WhatsApp) ----------
 @app.post("/whatsapp")
 async def whatsapp_webhook(request: Request):
-    """
-    Endpoint que recibe los mensajes de WhatsApp (POST desde Meta).
-    """
     try:
         body = await request.json()
-        # print("BODY:", body)  # útil para debug
+        print("POST /whatsapp BODY:", body)  # log para debug
 
         entry = body.get("entry", [])
         if not entry:
@@ -54,13 +52,11 @@ async def whatsapp_webhook(request: Request):
         value = changes[0].get("value", {})
         messages = value.get("messages", [])
         if not messages:
-            # No hay mensajes (puede ser un evento de status, etc.)
             return {"status": "no_messages"}
 
         message = messages[0]
-        wa_id = message.get("from")  # número de WhatsApp del usuario
+        wa_id = message.get("from")
 
-        # Obtenemos el texto independientemente del tipo
         msg_type = message.get("type")
         if msg_type == "text":
             text = message["text"]["body"]
@@ -73,7 +69,6 @@ async def whatsapp_webhook(request: Request):
             else:
                 text = ""
         else:
-            # Tipos no manejados (audio, imagen, etc.)
             text = ""
 
         if not text:
@@ -82,10 +77,7 @@ async def whatsapp_webhook(request: Request):
             )
             return {"status": "no_text"}
 
-        # Pasar el mensaje al bot (chat.py)
         respuestas = bot.handle_message(wa_id, text)
-
-        # Enviar todas las respuestas como mensajes de texto
         for r in respuestas:
             send_text_message(wa_id, r)
 
