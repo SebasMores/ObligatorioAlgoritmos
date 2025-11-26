@@ -67,3 +67,68 @@ def send_gif_message(to: str, gif_url: str):
         print("Respuesta:", resp.text)
     except Exception as e:
         print("❌ Error enviando GIF a WhatsApp:", str(e))
+
+        def send_interactive_list_message(
+    to: str,
+    header_text: str,
+    body_text: str,
+    footer_text: str,
+    button_text: str,
+    sections: list,
+):
+    """
+    Envía un mensaje interactivo de tipo LIST a WhatsApp.
+    'sections' debe ser una lista de dicts con la forma:
+    [
+        {
+            "title": "Título de sección",
+            "rows": [
+                {"id": "1", "title": "Hamburguesa", "description": "Con cheddar"},
+                ...
+            ]
+        },
+        ...
+    ]
+    """
+    if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+        print("⚠️ Falta configurar WHATSAPP_TOKEN o PHONE_NUMBER_ID")
+        return
+
+    url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+    }
+
+    data = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "header": {
+                "type": "text",
+                "text": header_text,
+            },
+            "body": {
+                "text": body_text,
+            },
+            "footer": {
+                "text": footer_text,
+            },
+            "action": {
+                "button": button_text,
+                "sections": sections,
+            },
+        },
+    }
+
+    try:
+        resp = requests.post(url, headers=headers, json=data)
+        print("📤 Enviando LIST a WhatsApp...")
+        print("Status:", resp.status_code)
+        print("Respuesta:", resp.text)
+    except Exception as e:
+        print("❌ Error enviando LIST a WhatsApp:", str(e))
+

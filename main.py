@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 from services.whatsapp_client import send_text_message
+from services.whatsapp_client import send_text_message, send_interactive_list_message
 from chat import bot
 import asyncio
 
@@ -49,7 +50,7 @@ class MessageAggregator:
     async def _wait_and_process(self, user_id: str, process_callback):
         try:
             # Esperar 10 segundos desde el último mensaje
-            await asyncio.sleep(10)
+            await asyncio.sleep(3)
 
             buf = self._buffers.pop(user_id, None)
             if not buf:
@@ -72,12 +73,29 @@ message_aggregator = MessageAggregator()
 
 async def process_user_message(user_id: str, text: str):
     """
-    Esta función se ejecuta recién cuando pasan 10s sin mensajes nuevos.
+    Esta función se ejecuta recién cuando pasan 3/10s sin mensajes nuevos.
     Aquí sí llamamos al bot y mandamos las respuestas.
     """
     respuestas = bot.handle_message(user_id, text)
+
     for r in respuestas:
-        send_text_message(user_id, r)
+        # Caso clásico: respuesta de texto
+        if isinstance(r, str):
+            send_text_message(user_id, r)
+            continue
+
+        # Caso nuevo: respuesta interactiva tipo lista
+        if isinstance(r, dict) and r.get("kind") == "interactive_list":
+            sections = r.get("sections", [])
+            send_interactive_list_message(
+                to=user_id,
+                header_text=r.get("header", "Menú"),
+                body_text=r.get("body", "Elegí una opción de la lista"),
+                footer_text=r.get("footer", ""),
+                button_text=r.get("button", "Menu"),
+                sections=sections,
+            )
+            continue
 
 
 # ================== ENDPOINTS WHATSAPP ==================

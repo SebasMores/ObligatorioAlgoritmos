@@ -80,6 +80,50 @@ class ChatBot:
         if lower == "/ayuda":
             return self._handle_ayuda(session)
 
+        if lower == "/lista_demo":
+            # Ejemplo simple copiando la idea del JSON del profe
+            return [
+                {
+                    "kind": "interactive_list",
+                    "header": "Ejemplo de Título",
+                    "body": "Cuerpo de la lista de prueba.",
+                    "footer": "Pie de lista demo",
+                    "button": "Menú",
+                    "sections": [
+                        {
+                            "title": "Productos",
+                            "rows": [
+                                {
+                                    "id": "prod_1",
+                                    "title": "Hamburguesa",
+                                    "description": "Con cheddar",
+                                },
+                                {
+                                    "id": "prod_2",
+                                    "title": "Pizza",
+                                    "description": "Con piña",
+                                },
+                            ],
+                        },
+                        {
+                            "title": "Opciones",
+                            "rows": [
+                                {
+                                    "id": "ver_mas",
+                                    "title": "Ver más productos",
+                                    "description": "Muestra los siguientes 5",
+                                },
+                                {
+                                    "id": "filtrar",
+                                    "title": "Filtrar",
+                                    "description": "Filtrar por categoría",
+                                },
+                            ],
+                        },
+                    ],
+                }
+            ]
+
         # Si no está en ningún flujo, redirigimos a /ayuda
         if session.state == STATE_IDLE:
             return [
