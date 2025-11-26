@@ -1,111 +1,87 @@
 from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
-
-from chat import bot
+from fastapi.responses import PlainTextResponse
 from services.whatsapp_client import send_text_message
+from chat import bot
 import os
 
 app = FastAPI()
-os.makedirs("media", exist_ok=True)
-app.mount("/media", StaticFiles(directory="media"), name="media")
 
-
-# =========================================================
-# CONFIGURACIÓN
-# =========================================================
-
-# En Render deberías tener seteada la variable VERIFY_TOKEN con este valor.
-# Si no está, usa "bot_delivery_YA_2025" por defecto.
 VERIFY_TOKEN = "bot_delivery_YA_2025"
 
 
-# =========================================================
-# 1. ENDPOINT DE VERIFICACIÓN (Meta lo usa al configurar webhook)
-#    -> Ojo: ahora es /whatsapp, no /webhook
-# =========================================================
-
-
 @app.get("/whatsapp")
-async def verify_webhook(request: Request):
+async def verify_webhook(
+    hub_mode: str = "", hub_challenge: str = "", hub_verify_token: str = ""
+):
     """
-    Endpoint que usa Meta para verificar el webhook.
+    Endpoint de verificación del webhook de Meta.
+    Meta hace un GET a /whatsapp con estos parámetros.
     """
-    params = request.query_params
-
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
-
-    if mode == "subscribe" and token == VERIFY_TOKEN:
-        # Meta espera que devolvamos el challenge como número
-        return int(challenge)
-
-    return {"error": "Token inválido"}
-
-
-# =========================================================
-# 2. ENDPOINT PRINCIPAL PARA RECIBIR MENSAJES DE WHATSAPP
-#    -> También en /whatsapp (POST)
-# =========================================================
+    if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
+        # Si el token coincide, devolvemos el challenge
+        return PlainTextResponse(hub_challenge, status_code=200)
+    return PlainTextResponse("Error de verificación", status_code=403)
 
 
 @app.post("/whatsapp")
-async def receive_message(request: Request):
+async def whatsapp_webhook(request: Request):
     """
-    Acá llegan TODOS los mensajes que escriben al número de WhatsApp.
+    Endpoint que recibe los mensajes de WhatsApp (POST desde Meta).
     """
-    payload = await request.json()
-
     try:
-        # Extraer el ID de WhatsApp y el texto del mensaje
-        wa_id = extraer_wa_id(payload)
-        mensaje = extraer_texto(payload)
+        body = await request.json()
+        # print("BODY:", body)  # útil para debug
 
-        if not wa_id or not mensaje:
-            # No vino mensaje de texto "normal"
-            return {"status": "ignored"}
+        entry = body.get("entry", [])
+        if not entry:
+            return {"status": "no_entry"}
 
-        # 1) Obtener la sesión y guardar el wa_id
-        session = bot._get_session(wa_id)
-        session.data["wa_id"] = wa_id
+        changes = entry[0].get("changes", [])
+        if not changes:
+            return {"status": "no_changes"}
 
-        # 2) Recién después procesar el mensaje
-        respuestas = bot.handle_message(wa_id, texto)
+        value = changes[0].get("value", {})
+        messages = value.get("messages", [])
+        if not messages:
+            # No hay mensajes (puede ser un evento de status, etc.)
+            return {"status": "no_messages"}
 
-        # 3) Enviar las respuestas de texto
+        message = messages[0]
+        wa_id = message.get("from")  # número de WhatsApp del usuario
+
+        # Obtenemos el texto independientemente del tipo
+        msg_type = message.get("type")
+        if msg_type == "text":
+            text = message["text"]["body"]
+        elif msg_type == "interactive":
+            # Si es una respuesta a un botón/lista interactiva
+            interactive = message.get("interactive", {})
+            if "button_reply" in interactive:
+                text = interactive["button_reply"]["title"]
+            elif "list_reply" in interactive:
+                text = interactive["list_reply"]["title"]
+            else:
+                text = ""
+        else:
+            # Tipos no manejados (audio, imagen, etc.)
+            text = ""
+
+        if not text:
+            # Si no hay texto entendible, no hacemos nada complejo
+            send_text_message(
+                wa_id, "Solo puedo procesar mensajes de texto por ahora 🙂"
+            )
+            return {"status": "no_text"}
+
+        # Pasar el mensaje al bot (chat.py)
+        respuestas = bot.handle_message(wa_id, text)
+
+        # Enviar todas las respuestas como mensajes de texto
         for r in respuestas:
             send_text_message(wa_id, r)
 
-        # Enviar cada respuesta al usuario
-        for respuesta in respuestas:
-            send_text_message(wa_id, respuesta)
+        return {"status": "ok"}
 
     except Exception as e:
         print("Error procesando mensaje:", e)
-
-    return {"status": "ok"}
-
-
-# =========================================================
-# 3. FUNCIONES AUXILIARES PARA LEER EL PAYLOAD DE META
-# =========================================================
-
-
-def extraer_wa_id(payload: dict) -> str | None:
-    """
-    Devuelve el número de WhatsApp del remitente.
-    """
-    try:
-        return payload["entry"][0]["changes"][0]["value"]["messages"][0]["from"]
-    except Exception:
-        return None
-
-
-def extraer_texto(payload: dict) -> str | None:
-    """
-    Devuelve el texto del mensaje enviado por el usuario.
-    """
-    try:
-        return payload["entry"][0]["changes"][0]["value"]["messages"][0]["text"]["body"]
-    except Exception:
-        return None
+        return {"status": "error", "detail": str(e)}
