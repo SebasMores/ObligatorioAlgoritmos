@@ -1,33 +1,39 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query
 from fastapi.responses import PlainTextResponse
 from services.whatsapp_client import send_text_message
 from chat import bot
-import os
 
 app = FastAPI()
 
 VERIFY_TOKEN = "bot_delivery_YA_2025"
 
 
+# ---------- RUTA RAÍZ (para probar que el server está vivo) ----------
 @app.get("/")
 async def root():
     return {"status": "ok", "message": "WhatsApp bot funcionando"}
 
 
+# ---------- GET /whatsapp (verificación del webhook) ----------
 @app.get("/whatsapp")
 async def verify_webhook(
-    hub_mode: str = "", hub_challenge: str = "", hub_verify_token: str = ""
+    hub_mode: str = Query(None, alias="hub.mode"),
+    hub_challenge: str = Query(None, alias="hub.challenge"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token"),
 ):
     """
-    Endpoint de verificación del webhook de Meta.
-    Meta hace un GET a /whatsapp con estos parámetros.
+    Meta llama a este endpoint con un GET para verificar el webhook.
+    Usa los parámetros: hub.mode, hub.challenge, hub.verify_token
     """
+    # Aceptamos sólo si el modo es "subscribe" y el token coincide
     if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
-        # Si el token coincide, devolvemos el challenge
-        return PlainTextResponse(hub_challenge, status_code=200)
+        # devolvemos el challenge tal cual lo manda Meta
+        return PlainTextResponse(hub_challenge or "", status_code=200)
+
     return PlainTextResponse("Error de verificación", status_code=403)
 
 
+# ---------- POST /whatsapp (mensajes que llegan de WhatsApp) ----------
 @app.post("/whatsapp")
 async def whatsapp_webhook(request: Request):
     """
@@ -59,7 +65,6 @@ async def whatsapp_webhook(request: Request):
         if msg_type == "text":
             text = message["text"]["body"]
         elif msg_type == "interactive":
-            # Si es una respuesta a un botón/lista interactiva
             interactive = message.get("interactive", {})
             if "button_reply" in interactive:
                 text = interactive["button_reply"]["title"]
@@ -72,7 +77,6 @@ async def whatsapp_webhook(request: Request):
             text = ""
 
         if not text:
-            # Si no hay texto entendible, no hacemos nada complejo
             send_text_message(
                 wa_id, "Solo puedo procesar mensajes de texto por ahora 🙂"
             )
