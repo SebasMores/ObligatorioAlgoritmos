@@ -325,7 +325,8 @@ class ChatBot:
                 ]
 
             # Reset de estado
-            session.state = STATE_MAIN_MENU
+            # Reset de estado: lo dejamos “en reposo”
+            session.state = STATE_IDLE
             session.waiting_for = WAITING_NONE
             session.data.clear()
 
