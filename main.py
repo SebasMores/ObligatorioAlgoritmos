@@ -30,7 +30,6 @@ async def whatsapp_webhook(request: Request):
     """
     try:
         body = await request.json()
-        # print("BODY:", body)  # útil para debug
 
         entry = body.get("entry", [])
         if not entry:
@@ -43,18 +42,34 @@ async def whatsapp_webhook(request: Request):
         value = changes[0].get("value", {})
         messages = value.get("messages", [])
         if not messages:
-            # No hay mensajes (puede ser un evento de status, etc.)
+            # No hay mensajes (puede ser status, etc.)
             return {"status": "no_messages"}
 
+        # 👇 ESTE ES EL MENSAJE QUE LLEGA DE WHATSAPP
         message = messages[0]
         wa_id = message.get("from")  # número de WhatsApp del usuario
+        msg_id = message.get("id")  # ⚠️ ID ÚNICO DEL MENSAJE
 
-        # Obtenemos el texto independientemente del tipo
+        # --------- OBTENER SESIÓN Y FILTRAR DUPLICADOS ---------
+        session = bot._get_session(wa_id)
+
+        if session.last_message_id == msg_id:
+            # Ya procesamos este mensaje antes, lo ignoramos
+            print("🔁 Mensaje duplicado ignorado:", msg_id)
+            return {"status": "duplicate_ignored"}
+
+        # Guardamos el último id procesado
+        session.last_message_id = msg_id
+
+        # (opcional) Guardar el wa_id por si alguna vez lo necesitás en chat.py
+        session.data["wa_id"] = wa_id
+        # -------------------------------------------------------
+
+        # Obtenemos el texto según el tipo
         msg_type = message.get("type")
         if msg_type == "text":
             text = message["text"]["body"]
         elif msg_type == "interactive":
-            # Si es una respuesta a un botón/lista interactiva
             interactive = message.get("interactive", {})
             if "button_reply" in interactive:
                 text = interactive["button_reply"]["title"]
@@ -63,13 +78,12 @@ async def whatsapp_webhook(request: Request):
             else:
                 text = ""
         else:
-            # Tipos no manejados (audio, imagen, etc.)
             text = ""
 
         if not text:
-            # Si no hay texto entendible, no hacemos nada complejo
             send_text_message(
-                wa_id, "Solo puedo procesar mensajes de texto por ahora 🙂"
+                wa_id,
+                "Solo puedo procesar mensajes de texto por ahora 🙂",
             )
             return {"status": "no_text"}
 
