@@ -69,8 +69,8 @@ async def receive_message(request: Request):
         session = bot._get_session(wa_id)
         session.data["wa_id"] = wa_id
 
-        #2) Recién después procesar el mensaje
-        respuestas = bot.handle_message(wa_id, mensaje)
+        # 2) Recién después procesar el mensaje
+        respuestas = bot.handle_message(wa_id, texto)
 
         # 3) Enviar las respuestas de texto
         for r in respuestas:
