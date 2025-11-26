@@ -1,8 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 
-from services.whatsapp_client import send_gif_message
-
 # Estados de la conversación
 STATE_IDLE = "IDLE"
 STATE_MAIN_MENU = "MAIN_MENU"
@@ -155,6 +153,8 @@ class ChatBot:
             "Respondé *1, 2 o 3*, o mandá /ayuda para ver el menú de nuevo.",
         ]
 
+    # ================= OPCIÓN 1: RUTA =================
+
     def _handle_opcion_ruta(
         self, session: ChatSession, raw: str, lower: str
     ) -> List[str]:
@@ -163,9 +163,10 @@ class ChatBot:
         1) Pedir origen (como nombre)
         2) Pedir destino (como nombre)
         3) Preguntar algoritmo
-        4) Ejecutar algoritmo en modo ligero (sin GIF en el servidor)
+        4) Convertir origen/destino a nodos del grafo y ejecutar
         """
 
+        # Mapeo de nombres de lugares (texto) a coordenadas (lat, lon)
         lugares: Dict[str, tuple[float, float]] = {
             "centro": (-31.3833, -57.9667),
             "plaza artigas": (-31.3825, -57.9658),
@@ -240,21 +241,28 @@ class ChatBot:
                     "Mandá /ayuda y volvé a elegir la opción 1.",
                 ]
 
+            # Elegir algoritmo
             if lower == "1":
+                algoritmo = "Dijkstra"
                 usar_dijkstra = True
-                nombre_algoritmo = "Dijkstra"
             elif lower == "2":
+                algoritmo = "A*"
                 usar_dijkstra = False
-                nombre_algoritmo = "A*"
             else:
                 return [
                     "No entendí el algoritmo 😅.",
                     "Respondé *1* para Dijkstra o *2* para A*.",
                 ]
 
-            # --- Importar módulo de rutas ---
+            # --- Acá recién importamos cosas pesadas ---
             try:
-                from coordenadas_gifs import dijkstra_gif, a_star_gif, G
+                from coordenadas_gifs import (
+                    dijkstra_gif,
+                    a_star_gif,
+                    reconstruct_path_gif,
+                    create_gif,
+                    G,
+                )
                 import osmnx as ox
             except Exception as e:
                 session.state = STATE_MAIN_MENU
@@ -263,15 +271,18 @@ class ChatBot:
                 return [
                     "❌ Error interno al cargar el módulo de rutas.",
                     f"Detalle técnico: {e}",
+                    "Avisale al profe que revise las dependencias (osmnx, networkx, etc.).",
                 ]
 
-            # Coordenadas de origen/destino
-            orig_coord = lugares[origen_nombre]
-            dest_coord = lugares[destino_nombre]
+            # Convertir nombres a coordenadas
+            orig_coord = lugares[origen_nombre]  # (lat, lon)
+            dest_coord = lugares[destino_nombre]  # (lat, lon)
 
-            # Convertir a nodos del grafo
+            # Convertir coordenadas a nodos del grafo
             try:
-                origen_nodo = ox.distance.nearest_nodes(G, orig_coord[1], orig_coord[0])
+                origen_nodo = ox.distance.nearest_nodes(
+                    G, orig_coord[1], orig_coord[0]
+                )  # (lon, lat)
                 destino_nodo = ox.distance.nearest_nodes(
                     G, dest_coord[1], dest_coord[0]
                 )
@@ -284,26 +295,32 @@ class ChatBot:
                     f"Detalle técnico: {e}",
                 ]
 
-            # Ejecutar algoritmo en modo ligero (sin GIF)
+            # Ejecutar algoritmo correspondiente
             try:
                 if usar_dijkstra:
-                    dijkstra_gif(origen_nodo, destino_nodo, generar_frames=False)
+                    dijkstra_gif(origen_nodo, destino_nodo)
+                    ok = reconstruct_path_gif(origen_nodo, destino_nodo, "Dijkstra")
+                    algoritmo = "Dijkstr"
                 else:
-                    a_star_gif(origen_nodo, destino_nodo, generar_frames=False)
+                    a_star_gif(origen_nodo, destino_nodo)
+                    ok = reconstruct_path_gif(origen_nodo, destino_nodo, "A_Star")
+                    algoritmo = "A*"
 
-                mensaje = [
-                    f"✅ Ruta calculada con *{nombre_algoritmo}* sobre el grafo de Salto.",
-                    "",
-                    f"• Origen: *{origen_nombre}*",
-                    f"• Destino: *{destino_nombre}*",
-                    "",
-                    "ℹ️ En el servidor no generamos el GIF para ahorrar memoria,",
-                    "   pero el módulo local `coordenadas_gifs.py` sí produce la animación completa.",
-                ]
+                if not ok:
+                    mensaje = [
+                        f"⚠️ No se pudo reconstruir el camino con {algoritmo}.",
+                        "Revisá si el grafo tiene conexión entre esos puntos.",
+                    ]
+                else:
+                    mensaje = [
+                        f"✅ Ruta calculada con *{algoritmo}* correctamente.",
+                        "📍 El recorrido óptimo fue procesado.",
+                        "ℹ️ El GIF animado se generó localmente para visualización.",
+                    ]
 
             except Exception as e:
                 mensaje = [
-                    "❌ Ocurrió un error al ejecutar el algoritmo de ruta.",
+                    f"❌ Ocurrió un error al ejecutar {algoritmo}.",
                     f"Detalle técnico: {e}",
                 ]
 
@@ -317,7 +334,7 @@ class ChatBot:
 
             return mensaje
 
-        # ---------- Fallback si el waiting_for no coincide ----------
+        # ---------- Fallback ----------
         session.state = STATE_MAIN_MENU
         session.waiting_for = WAITING_NONE
         session.data.clear()
@@ -325,3 +342,7 @@ class ChatBot:
             "Se perdió el flujo de la ruta 😅.",
             "Mandá /ayuda y elegí la opción 1 para reintentar.",
         ]
+
+
+# Instancia global para que main.py pueda hacer: from chat import bot
+bot = ChatBot()

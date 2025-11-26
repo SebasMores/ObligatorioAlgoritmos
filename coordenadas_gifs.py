@@ -109,11 +109,11 @@ def distance(node1, node2):
 # ============================================================
 
 
-def dijkstra_gif(orig, dest, generar_frames=True):
+def dijkstra_gif(orig, dest):
     global frames
     frames = []
 
-    # Inicialización
+    # Inicialización: todos los nodos están sin visitar y a distancia infinita
     for node in G.nodes:
         G.nodes[node]["visited"] = False
         G.nodes[node]["distance"] = float("inf")
@@ -122,61 +122,66 @@ def dijkstra_gif(orig, dest, generar_frames=True):
     for edge in G.edges:
         style_unvisited_edge(edge)
 
+    # El nodo origen tiene distancia 0
     G.nodes[orig]["distance"] = 0
     G.nodes[orig]["size"] = 50
     G.nodes[dest]["size"] = 50
 
+    # Cola de prioridad: almacena (distancia_acumulada, nodo)
     pq = [(0, orig)]
     step = 0
 
-    # Frame inicial solo si queremos animación
-    if generar_frames:
-        plot_graph_to_image("Dijkstra - Inicio", save_frame=True, frame_num=0)
+    # Guardar frame inicial (para la animación)
+    plot_graph_to_image("Dijkstra - Inicio", save_frame=True, frame_num=0)
 
+    # Bucle principal del algoritmo
     while pq:
+        # Sacar el nodo con la menor distancia acumulada
         _, node = heapq.heappop(pq)
 
+        # Si llegamos al destino, detenemos el algoritmo
         if node == dest:
-            if generar_frames:
-                plot_graph_to_image(
-                    f"Dijkstra - Destino encontrado! (Iteraciones: {step})",
-                    save_frame=True,
-                    frame_num=step + 1,
-                )
+            plot_graph_to_image(
+                f"Dijkstra - Destino encontrado! (Iteraciones: {step})",
+                save_frame=True,
+                frame_num=step + 1,
+            )
             break
 
+        # Si ya fue visitado, lo ignoramos
         if G.nodes[node]["visited"]:
             continue
 
+        # Marcamos el nodo como visitado
         G.nodes[node]["visited"] = True
 
+        # Exploramos sus vecinos
         for edge in G.out_edges(node):
-            style_visited_edge((edge[0], edge[1], 0))
+            style_visited_edge((edge[0], edge[1], 0))  # Pintamos la arista explorada
             neighbor = edge[1]
             weight = G.edges[(edge[0], edge[1], 0)]["weight"]
 
+            # Si encontramos un camino más corto hacia el vecino, actualizamos
             if G.nodes[neighbor]["distance"] > G.nodes[node]["distance"] + weight:
                 G.nodes[neighbor]["distance"] = G.nodes[node]["distance"] + weight
                 G.nodes[neighbor]["previous"] = node
+                # Insertamos en la cola con la nueva distancia
                 heapq.heappush(pq, (G.nodes[neighbor]["distance"], neighbor))
-
-                if generar_frames:
-                    for edge2 in G.out_edges(neighbor):
-                        style_active_edge((edge2[0], edge2[1], 0))
+                # Resaltamos los vecinos activos (en expansión)
+                for edge2 in G.out_edges(neighbor):
+                    style_active_edge((edge2[0], edge2[1], 0))
 
         step += 1
 
-        if generar_frames and step % 10 == 0:
+        # Guardar frame cada 10 pasos para no generar demasiadas imágenes
+        if step % 10 == 0:
             plot_graph_to_image(
                 f"Dijkstra explorando... (Iteracion: {step})",
                 save_frame=True,
                 frame_num=step,
             )
 
-    if generar_frames:
-        print(f"Dijkstra completado: {len(frames)} frames capturados")
-    else:
-        print("Dijkstra completado en modo ligero (sin frames).")
+    print(f"Dijkstra completado: {len(frames)} frames capturados")
 
 
 # ============================================================
@@ -184,72 +189,79 @@ def dijkstra_gif(orig, dest, generar_frames=True):
 # ============================================================
 
 
-def a_star_gif(orig, dest, generar_frames=True):
+def a_star_gif(orig, dest):
     global frames
     frames = []
 
+    # Inicializamos valores de cada nodo
     for node in G.nodes:
         G.nodes[node]["previous"] = None
         G.nodes[node]["size"] = 0
-        G.nodes[node]["g_score"] = float("inf")
-        G.nodes[node]["f_score"] = float("inf")
+        G.nodes[node]["g_score"] = float("inf")  # costo desde el origen
+        G.nodes[node]["f_score"] = float("inf")  # costo estimado total
     for edge in G.edges:
         style_unvisited_edge(edge)
 
+    # Inicializamos el nodo origen
     G.nodes[orig]["size"] = 50
     G.nodes[dest]["size"] = 50
     G.nodes[orig]["g_score"] = 0
+    # f = g + h → h se calcula con la distancia euclidiana (heurística)
     G.nodes[orig]["f_score"] = distance(orig, dest)
 
+    # Cola de prioridad: contiene (f_score, nodo)
     pq = [(G.nodes[orig]["f_score"], orig)]
     step = 0
 
-    if generar_frames:
-        plot_graph_to_image("A* - Inicio", save_frame=True, frame_num=0)
+    # Primer frame
+    plot_graph_to_image("A* - Inicio", save_frame=True, frame_num=0)
 
+    # Bucle principal del algoritmo A*
     while pq:
+        # Tomamos el nodo con menor f_score
         _, node = heapq.heappop(pq)
 
+        # Si llegamos al destino, terminamos
         if node == dest:
-            if generar_frames:
-                plot_graph_to_image(
-                    f"A* - Destino encontrado! (Iteraciones: {step})",
-                    save_frame=True,
-                    frame_num=step + 1,
-                )
+            plot_graph_to_image(
+                f"A* - Destino encontrado! (Iteraciones: {step})",
+                save_frame=True,
+                frame_num=step + 1,
+            )
             break
 
+        # Exploramos los vecinos del nodo actual
         for edge in G.out_edges(node):
             style_visited_edge((edge[0], edge[1], 0))
             neighbor = edge[1]
 
+            # Costo real desde el origen hasta el vecino (g)
             tentative_g_score = G.nodes[node]["g_score"] + distance(node, neighbor)
 
+            # Si encontramos un camino más corto hacia el vecino
             if tentative_g_score < G.nodes[neighbor]["g_score"]:
+                # Actualizamos su padre (para reconstruir el camino)
                 G.nodes[neighbor]["previous"] = node
                 G.nodes[neighbor]["g_score"] = tentative_g_score
+                # f = g + h (h = distancia estimada al destino)
                 G.nodes[neighbor]["f_score"] = tentative_g_score + distance(
                     neighbor, dest
                 )
+                # Insertamos en la cola con prioridad f_score
                 heapq.heappush(pq, (G.nodes[neighbor]["f_score"], neighbor))
-
-                if generar_frames:
-                    for edge2 in G.out_edges(neighbor):
-                        style_active_edge((edge2[0], edge2[1], 0))
+                # Resaltamos los vecinos activos
+                for edge2 in G.out_edges(neighbor):
+                    style_active_edge((edge2[0], edge2[1], 0))
 
         step += 1
 
-        if generar_frames and step % 5 == 0:
+        # Guardamos un frame cada 5 pasos (A* suele ser más rápido)
+        if step % 5 == 0:
             plot_graph_to_image(
-                f"A* explorando... (Iteracion: {step})",
-                save_frame=True,
-                frame_num=step,
+                f"A* explorando... (Iteracion: {step})", save_frame=True, frame_num=step
             )
 
-    if generar_frames:
-        print(f"A* completado: {len(frames)} frames capturados")
-    else:
-        print("A* completado en modo ligero (sin frames).")
+    print(f"A* completado: {len(frames)} frames capturados")
 
 
 # ============================================================
@@ -282,19 +294,19 @@ def reconstruct_path_gif(orig, dest, algorithm_name=""):
     for i, edge in enumerate(reversed(path_edges)):
         style_path_edge(edge)
         plot_graph_to_image(
-            f"{algorithm_name} - Construyendo camino... {i + 1}/{len(path_edges)}",
+            f"{algorithm_name} - Construyendo camino... {i+1}/{len(path_edges)}",
             save_frame=True,
             frame_num=i,
         )
 
     dist /= 1000
     final_title = f"{algorithm_name} - CAMINO OPTIMO\n"
-    final_title += f"Distancia: {dist:.2f}km | Velocidad: {sum(speeds) / len(speeds):.1f}km/h | Tiempo: {dist / (sum(speeds) / len(speeds)) * 60:.1f}min"
+    final_title += f"Distancia: {dist:.2f}km | Velocidad: {sum(speeds)/len(speeds):.1f}km/h | Tiempo: {dist/(sum(speeds)/len(speeds)) * 60:.1f}min"
     plot_graph_to_image(final_title, save_frame=True, frame_num=len(path_edges))
 
     print(f"Distancia: {dist:.2f} km")
-    print(f"Velocidad promedio: {sum(speeds) / len(speeds):.1f} km/h")
-    print(f"Tiempo total: {dist / (sum(speeds) / len(speeds)) * 60:.1f} minutos")
+    print(f"Velocidad promedio: {sum(speeds)/len(speeds):.1f} km/h")
+    print(f"Tiempo total: {dist/(sum(speeds)/len(speeds)) * 60:.1f} minutos")
     print(f"Camino completado: {len(frames)} frames totales")
 
     return True
@@ -304,14 +316,13 @@ def create_gif(algorithm_name, duration=500):
     if not frames:
         print("No hay frames para crear el GIF")
         return None
-    os.makedirs("media", exist_ok=True)
-    filename = f"media/pathfinding_{algorithm_name.lower()}_salto.gif"
+    filename = f"pathfinding_{algorithm_name.lower()}_salto.gif"
     try:
         frames[0].save(
             filename, save_all=True, append_images=frames[1:], duration=duration, loop=0
         )
         print(f"GIF creado exitosamente: {filename}")
-        print(f"{len(frames)} frames | {len(frames) * duration / 1000:.1f}s total")
+        print(f"{len(frames)} frames | {len(frames)*duration/1000:.1f}s total")
         return filename
     except Exception as e:
         print(f"Error al crear el GIF: {e}")
