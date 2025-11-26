@@ -9,6 +9,11 @@ app = FastAPI()
 VERIFY_TOKEN = "bot_delivery_YA_2025"
 
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "WhatsApp bot funcionando"}
+
+
 @app.get("/whatsapp")
 async def verify_webhook(
     hub_mode: str = "", hub_challenge: str = "", hub_verify_token: str = ""
