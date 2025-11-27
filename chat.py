@@ -485,7 +485,7 @@ class ChatBot:
                 "kind": "interactive_list",
                 "header": "Menú de productos",
                 "body": body_text,
-                "footer": "Elegí un producto, 'Siguientes productos' o 'Filtrar por categoría'.",
+                "footer": "Elegí un producto o una opción.",
                 "button": "Ver opciones",
                 "sections": sections,
             }
