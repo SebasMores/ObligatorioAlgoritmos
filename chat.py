@@ -397,17 +397,23 @@ class ChatBot:
 
     # ================= OPCIÓN 2: PEDIDO (VERSIÓN SIMPLE) =================
 
+    # ================= OPCIÓN 2: PEDIDO =================
+
     def _get_productos_filtrados(self, session: ChatSession):
         """
-        Devuelve la lista de productos aplicando el filtro por categoría (si existe).
+        Devuelve la lista de productos aplicando:
+        - filtro por categoría (pedido_filtro)
+        - orden por precio asc/desc (pedido_orden)
         """
         filtro = session.data.get("pedido_filtro", "Todos")
         orden = session.data.get("pedido_orden", "asc")
         productos = PRODUCTOS
 
+        # Filtrar por categoría
         if filtro and filtro != "Todos":
             productos = [p for p in productos if p.categoria == filtro]
 
+        # Ordenar por precio
         reverse = orden == "desc"
         productos = sorted(productos, key=lambda p: p.precio, reverse=reverse)
 
@@ -425,7 +431,7 @@ class ChatBot:
         PAGE_SIZE = 5
 
         # Productos con filtro + orden aplicados
-        productos = self._get_productos_filtrados_ordenados(session)
+        productos = self._get_productos_filtrados(session)
         total_items = len(productos)
         total_paginas = max(1, math.ceil(total_items / PAGE_SIZE))
 
@@ -520,12 +526,11 @@ class ChatBot:
 
         rows = []
         for cat in categorias:
-            # id: cat_<nombre_en_minusculas_sin_espacios>
             cat_id = "cat_" + cat.lower().replace(" ", "_")
             rows.append(
                 {
                     "id": cat_id,
-                    "title": cat,  # son cortitos, no hace falta truncar
+                    "title": cat,
                     "description": "Filtrar por esta categoría",
                 }
             )
@@ -565,7 +570,7 @@ class ChatBot:
                 session.waiting_for = WAITING_PEDIDO_FILTRO
                 return self._mostrar_lista_categorias(session)
 
-            # 🔹 NUEVO: ordenar por precio (toggle asc/desc)
+            # Ordenar por precio (toggle asc/desc)
             if lower == "opt_ordenar":
                 orden_actual = session.data.get("pedido_orden", "asc")
                 session.data["pedido_orden"] = (
@@ -585,6 +590,40 @@ class ChatBot:
             return [
                 f"🛒 Elegiste: *{producto.nombre}* (${producto.precio:.0f}).",
                 "Más adelante vamos a sumar cantidad y carrito.",
+            ] + self._mostrar_lista_productos(session)
+
+        # ================== LISTA DE CATEGORÍAS (FILTRO) ==================
+        if session.waiting_for == WAITING_PEDIDO_FILTRO:
+            # Esperamos ids tipo: cat_pizzas, cat_bebidas, cat_todos, etc.
+            if lower.startswith("cat_"):
+                # Buscar la categoría correspondiente
+                categorias = obtener_categorias()
+                seleccion = None
+                for cat in categorias:
+                    cat_id = "cat_" + cat.lower().replace(" ", "_")
+                    if cat_id == lower:
+                        seleccion = cat
+                        break
+
+                if seleccion is None:
+                    # Algo raro: volvemos al listado sin cambiar nada
+                    session.waiting_for = WAITING_PEDIDO_PRODUCTO
+                    return [
+                        "No reconocí esa categoría 😅",
+                        "Volvemos al listado de productos.",
+                    ] + self._mostrar_lista_productos(session)
+
+                # Aplicar filtro
+                session.data["pedido_filtro"] = seleccion
+                session.data["pedido_pagina"] = 0
+                session.waiting_for = WAITING_PEDIDO_PRODUCTO
+                return self._mostrar_lista_productos(session)
+
+            # Si no eligió una categoría válida
+            session.waiting_for = WAITING_PEDIDO_PRODUCTO
+            return [
+                "No reconocí esa categoría 😅",
+                "Volvemos al listado de productos.",
             ] + self._mostrar_lista_productos(session)
 
 
