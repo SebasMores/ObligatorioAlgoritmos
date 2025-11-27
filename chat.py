@@ -1,15 +1,23 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
+from models.productos import PRODUCTOS, obtener_categorias, get_producto_por_id
+import math
+
 
 # Estados de la conversación
 STATE_IDLE = "IDLE"
 STATE_MAIN_MENU = "MAIN_MENU"
 STATE_RUTA = "RUTA"
+STATE_PEDIDO = "PEDIDO"  # NUEVO
 
 WAITING_NONE = None
 WAITING_RUTA_ORIGEN = "RUTA_ORIGEN"
 WAITING_RUTA_DESTINO = "RUTA_DESTINO"
 WAITING_RUTA_ALGORITMO = "RUTA_ALGORITMO"
+
+# Pedido
+WAITING_PEDIDO_PRODUCTO = "PEDIDO_PRODUCTO"
+WAITING_PEDIDO_FILTRO = "PEDIDO_FILTRO"
 
 
 @dataclass
@@ -138,6 +146,9 @@ class ChatBot:
         if session.state == STATE_RUTA:
             return self._handle_opcion_ruta(session, raw, lower)
 
+        if session.state == STATE_PEDIDO:
+            return self._handle_pedido(session, raw, lower)
+
         # Fallback
         session.state = STATE_IDLE
         session.waiting_for = WAITING_NONE
@@ -161,7 +172,7 @@ class ChatBot:
             "📋 *Menú de opciones*",
             "",
             "1️⃣ Calcular ruta de delivery (Dijkstra / A*).",
-            "2️⃣ [Opción 2 del obligatorio].",
+            "2️⃣ Realizar pedido (listar productos).",
             "3️⃣ [Opción 3 del obligatorio].",
             "",
             "Respondé con el *número* de la opción (por ejemplo: 1).",
@@ -182,10 +193,17 @@ class ChatBot:
             ]
 
         if lower == "2":
-            return [
-                "La *Opción 2* todavía no está implementada.",
-                "Por ahora, solo está funcionando la opción 1.",
-            ]
+            # Iniciar flujo de pedido
+            session.state = STATE_PEDIDO
+            session.waiting_for = WAITING_PEDIDO_PRODUCTO
+            session.data.clear()
+
+            # Configuración inicial del listado
+            session.data["pedido_pagina"] = 0
+            session.data["pedido_filtro"] = "Todos"
+            session.data["pedido_orden"] = "asc"  # asc o desc
+
+            return self._mostrar_lista_productos(session)
 
         if lower == "3":
             return [
@@ -380,6 +398,261 @@ class ChatBot:
         return [
             "Se perdió el flujo de la ruta 😅.",
             "Mandá /ayuda y elegí la opción 1 para reintentar.",
+        ]
+
+    def _get_productos_filtrados_ordenados(self, session: ChatSession):
+        filtro = session.data.get("pedido_filtro", "Todos")
+        orden = session.data.get("pedido_orden", "asc")
+
+        productos = PRODUCTOS
+
+        # Filtrar por categoría
+        if filtro and filtro != "Todos":
+            productos = [p for p in productos if p.categoria == filtro]
+
+        # Ordenar por precio
+        reverse = orden == "desc"
+        productos = sorted(productos, key=lambda p: p.precio, reverse=reverse)
+        return productos
+
+    def _mostrar_lista_productos(self, session: ChatSession):
+        """
+        Construye y devuelve un mensaje de lista interactiva con:
+        - Sección Productos (máx 5 por página)
+        - Sección Opciones (ver más, volver, filtrar, ordenar...)
+        """
+        pagina = session.data.get("pedido_pagina", 0)
+        productos = self._get_productos_filtrados_ordenados(session)
+
+        PAGE_SIZE = 5
+        total_items = len(productos)
+        total_paginas = max(1, math.ceil(total_items / PAGE_SIZE))
+
+        # Normalizar página
+        if pagina < 0:
+            pagina = 0
+        if pagina > total_paginas - 1:
+            pagina = total_paginas - 1
+        session.data["pedido_pagina"] = pagina
+
+        start = pagina * PAGE_SIZE
+        end = start + PAGE_SIZE
+        productos_pagina = productos[start:end]
+
+        # Sección de productos
+        rows_productos = []
+        for p in productos_pagina:
+            rows_productos.append(
+                {
+                    "id": p.id,  # MUY IMPORTANTE: este ID vuelve en el webhook
+                    "title": f"{p.nombre} - ${p.precio:.0f}",
+                    "description": p.categoria,
+                }
+            )
+
+        # Sección de opciones
+        rows_opciones = []
+
+        # Siguientes productos (si hay más páginas)
+        if pagina < total_paginas - 1:
+            rows_opciones.append(
+                {
+                    "id": "opt_ver_mas",
+                    "title": "Siguientes productos",
+                    "description": "Ver los próximos 5 productos",
+                }
+            )
+
+        # Volver (si no estamos en la primera)
+        if pagina > 0:
+            rows_opciones.append(
+                {
+                    "id": "opt_volver",
+                    "title": "Volver",
+                    "description": "Volver a la página anterior",
+                }
+            )
+
+        # Volver al inicio (si estamos en la tercera o más)
+        if pagina >= 2:
+            rows_opciones.append(
+                {
+                    "id": "opt_volver_inicio",
+                    "title": "Volver al inicio",
+                    "description": "Ir a la primera página de productos",
+                }
+            )
+
+        # Filtrar
+        rows_opciones.append(
+            {
+                "id": "opt_filtrar",
+                "title": "Filtrar por categoría",
+                "description": "Cambiar la categoría de productos",
+            }
+        )
+
+        # Ordenar
+        orden_actual = session.data.get("pedido_orden", "asc")
+        desc_orden = (
+            "Actualmente: más baratos primero"
+            if orden_actual == "asc"
+            else "Actualmente: más caros primero"
+        )
+        rows_opciones.append(
+            {
+                "id": "opt_ordenar",
+                "title": "Ordenar por precio",
+                "description": desc_orden,
+            }
+        )
+
+        sections = []
+        if rows_productos:
+            sections.append({"title": "Productos", "rows": rows_productos})
+        if rows_opciones:
+            sections.append({"title": "Opciones", "rows": rows_opciones})
+
+        body_text = (
+            f"Página {pagina + 1}/{total_paginas}. "
+            f"Filtro: {session.data.get('pedido_filtro', 'Todos')}."
+        )
+
+        return [
+            {
+                "kind": "interactive_list",
+                "header": "Menú de productos",
+                "body": body_text,
+                "footer": "Elegí un producto o una opción.",
+                "button": "Ver opciones",
+                "sections": sections,
+            }
+        ]
+
+    def _mostrar_lista_categorias(self, session: ChatSession):
+        """
+        Lista interactiva SOLO de categorías para elegir filtro.
+        """
+        categorias = obtener_categorias()  # incluye "Todos" al inicio
+
+        rows = []
+        for cat in categorias:
+            rows.append(
+                {
+                    "id": f"cat_{cat.lower()}",
+                    "title": cat,
+                    "description": "Filtrar por esta categoría",
+                }
+            )
+
+        return [
+            {
+                "kind": "interactive_list",
+                "header": "Filtrar productos",
+                "body": "Elegí una categoría para filtrar.",
+                "footer": "La opción 'Todos' quita el filtro.",
+                "button": "Categorías",
+                "sections": [
+                    {
+                        "title": "Categorías",
+                        "rows": rows,
+                    }
+                ],
+            }
+        ]
+
+    def _handle_pedido(self, session: ChatSession, raw: str, lower: str):
+        """
+        Maneja el flujo de listado de productos y opciones (ver más, filtrar, ordenar).
+        El 'lower' puede ser:
+          - id de producto (p1, m1, etc.)
+          - opción (opt_ver_mas, opt_filtrar, opt_ordenar, etc.)
+          - categoría (cat_pizzas, cat_todos, ...)
+        """
+
+        # Esperando que el usuario interactúe con la lista de productos/opciones
+        if session.waiting_for == WAITING_PEDIDO_PRODUCTO:
+            # Opciones especiales
+            if lower == "opt_ver_mas":
+                session.data["pedido_pagina"] = session.data.get("pedido_pagina", 0) + 1
+                return self._mostrar_lista_productos(session)
+
+            if lower == "opt_volver":
+                session.data["pedido_pagina"] = session.data.get("pedido_pagina", 0) - 1
+                return self._mostrar_lista_productos(session)
+
+            if lower == "opt_volver_inicio":
+                session.data["pedido_pagina"] = 0
+                return self._mostrar_lista_productos(session)
+
+            if lower == "opt_filtrar":
+                # Cambiamos el waiting_for para interpretar la elección de categoría
+                session.waiting_for = WAITING_PEDIDO_FILTRO
+                return self._mostrar_lista_categorias(session)
+
+            if lower == "opt_ordenar":
+                # Toggle asc/desc
+                orden_actual = session.data.get("pedido_orden", "asc")
+                session.data["pedido_orden"] = (
+                    "desc" if orden_actual == "asc" else "asc"
+                )
+                return self._mostrar_lista_productos(session)
+
+            # Si no es opción, asumimos que es un id de producto
+            producto = get_producto_por_id(raw) or get_producto_por_id(lower)
+            if producto is None:
+                # Puede que el usuario haya escrito texto libre
+                return [
+                    "No reconocí esa opción 😅",
+                    "Respondé desde la lista interactiva o mandá /ayuda para volver al menú.",
+                ]
+
+            # Por ahora solo confirmamos el producto elegido.
+            # Más adelante acá vamos a pedir cantidad y detalles y guardarlo en el carrito.
+            return [
+                f"🛒 Elegiste: *{producto.nombre}* (${producto.precio:.0f}).",
+                "En la próxima etapa vamos a pedir cantidad y detalles para el carrito.",
+                "",
+                "Por ahora podés seguir explorando productos:",
+            ] + self._mostrar_lista_productos(session)
+
+        # Esperando elección de categoría
+        if session.waiting_for == WAITING_PEDIDO_FILTRO:
+            if lower.startswith("cat_"):
+                nombre_cat = raw[4:] if raw.lower().startswith("cat_") else lower[4:]
+                # Reconstruimos el nombre original de categoría
+                categorias = obtener_categorias()
+                seleccion = None
+                for cat in categorias:
+                    if f"cat_{cat.lower()}" == lower:
+                        seleccion = cat
+                        break
+
+                if seleccion is None:
+                    # algo raro, volvemos sin cambiar nada
+                    session.waiting_for = WAITING_PEDIDO_PRODUCTO
+                    return self._mostrar_lista_productos(session)
+
+                # Aplicar filtro
+                session.data["pedido_filtro"] = seleccion
+                session.data["pedido_pagina"] = 0
+                session.waiting_for = WAITING_PEDIDO_PRODUCTO
+                return self._mostrar_lista_productos(session)
+
+            # Si no eligió una categoría válida
+            session.waiting_for = WAITING_PEDIDO_PRODUCTO
+            return [
+                "No reconocí esa categoría 😅",
+                "Volvemos al listado de productos.",
+            ] + self._mostrar_lista_productos(session)
+
+        # Cualquier otra cosa rara, volvemos al menú principal
+        session.state = STATE_MAIN_MENU
+        session.waiting_for = WAITING_NONE
+        session.data.clear()
+        return [
+            "Se perdió el flujo de pedido 😅",
+            "Mandá /ayuda y volvé a elegir la opción 2.",
         ]
 
 
