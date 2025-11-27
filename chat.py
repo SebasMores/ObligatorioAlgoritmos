@@ -199,6 +199,8 @@ class ChatBot:
 
             # Página inicial de productos (0)
             session.data["pedido_pagina"] = 0
+            session.data["pedido_filtro"] = "Todos"
+            session.data["pedido_orden"] = "asc"
 
             return self._mostrar_lista_productos(session)
 
@@ -400,28 +402,30 @@ class ChatBot:
         Devuelve la lista de productos aplicando el filtro por categoría (si existe).
         """
         filtro = session.data.get("pedido_filtro", "Todos")
+        orden = session.data.get("pedido_orden", "asc")
         productos = PRODUCTOS
 
         if filtro and filtro != "Todos":
             productos = [p for p in productos if p.categoria == filtro]
 
+        reverse = orden == "desc"
+        productos = sorted(productos, key=lambda p: p.precio, reverse=reverse)
+
         return productos
 
-    def _mostrar_lista_productos(self, session: ChatSession) -> List[Any]:
+    def _mostrar_lista_productos(self, session: ChatSession):
         """
-        Versión con filtro por categoría:
-        - Muestra hasta 5 productos por página
-        - Sección Productos
-        - Sección Opciones con:
-            - Siguientes productos (si hay otra página)
-            - Filtrar por categoría
+        Muestra hasta 5 productos por página, con:
+        - Filtro por categoría
+        - Orden por precio asc/desc (toggle)
+        - Opciones: ver más, filtrar, ordenar
         """
 
         pagina = session.data.get("pedido_pagina", 0)
         PAGE_SIZE = 5
 
-        # Productos con filtro aplicado
-        productos = self._get_productos_filtrados(session)
+        # Productos con filtro + orden aplicados
+        productos = self._get_productos_filtrados_ordenados(session)
         total_items = len(productos)
         total_paginas = max(1, math.ceil(total_items / PAGE_SIZE))
 
@@ -437,7 +441,7 @@ class ChatBot:
 
         rows_productos = []
         for p in productos_pagina:
-            # Título corto: solo el nombre, máx 24 caracteres (regla de WhatsApp)
+            # Título corto: solo el nombre, máx 24 caracteres
             title_text = p.nombre
             if len(title_text) > 24:
                 title_text = title_text[:23] + "…"
@@ -471,6 +475,21 @@ class ChatBot:
             }
         )
 
+        # Opción de ordenar por precio (toggle asc/desc)
+        orden_actual = session.data.get("pedido_orden", "asc")
+        if orden_actual == "asc":
+            desc_opcion = "Descendente"
+        else:
+            desc_opcion = "Ascendente"
+
+        rows_opciones.append(
+            {
+                "id": "opt_ordenar",
+                "title": "Ordenar por precio",
+                "description": f"Cambiar a {desc_opcion}",
+            }
+        )
+
         sections = []
         if rows_productos:
             sections.append({"title": "Productos", "rows": rows_productos})
@@ -478,7 +497,8 @@ class ChatBot:
             sections.append({"title": "Opciones", "rows": rows_opciones})
 
         filtro_actual = session.data.get("pedido_filtro", "Todos")
-        body_text = f"Página {pagina + 1}/{total_paginas} · Filtro: {filtro_actual}"
+        orden_texto = "Ascendente" if orden_actual == "asc" else "Descendente"
+        body_text = f"Página {pagina + 1}/{total_paginas} · Filtro: {filtro_actual} · Orden: {orden_texto}"
 
         return [
             {
@@ -526,7 +546,7 @@ class ChatBot:
             }
         ]
 
-    def _handle_pedido(self, session: ChatSession, raw: str, lower: str) -> List[Any]:
+    def _handle_pedido(self, session: ChatSession, raw: str, lower: str):
         """
         Flujo de pedido:
         - WAITING_PEDIDO_PRODUCTO: lista de productos y opciones
@@ -545,6 +565,15 @@ class ChatBot:
                 session.waiting_for = WAITING_PEDIDO_FILTRO
                 return self._mostrar_lista_categorias(session)
 
+            # 🔹 NUEVO: ordenar por precio (toggle asc/desc)
+            if lower == "opt_ordenar":
+                orden_actual = session.data.get("pedido_orden", "asc")
+                session.data["pedido_orden"] = (
+                    "desc" if orden_actual == "asc" else "asc"
+                )
+                session.data["pedido_pagina"] = 0
+                return self._mostrar_lista_productos(session)
+
             # Asumimos que cualquier otra cosa es ID de producto
             producto = get_producto_por_id(raw) or get_producto_por_id(lower)
             if producto is None:
@@ -557,49 +586,6 @@ class ChatBot:
                 f"🛒 Elegiste: *{producto.nombre}* (${producto.precio:.0f}).",
                 "Más adelante vamos a sumar cantidad y carrito.",
             ] + self._mostrar_lista_productos(session)
-
-        # ================== ELECCIÓN DE CATEGORÍA ==================
-        if session.waiting_for == WAITING_PEDIDO_FILTRO:
-            # Esperamos IDs del tipo cat_pizzas, cat_minutas, cat_todos, etc.
-            if lower.startswith("cat_"):
-                cat_key = lower[4:]  # lo que viene después de 'cat_'
-                categorias = obtener_categorias()  # ["Todos", "Bebidas", ...]
-                seleccion = None
-                for cat in categorias:
-                    key = cat.lower().replace(" ", "_")
-                    if key == cat_key:
-                        seleccion = cat
-                        break
-
-                if seleccion is None:
-                    # Algo raro, volvemos a la lista de productos sin cambiar filtro
-                    session.waiting_for = WAITING_PEDIDO_PRODUCTO
-                    return [
-                        "No reconocí esa categoría 😅",
-                        "Volvemos al listado de productos.",
-                    ] + self._mostrar_lista_productos(session)
-
-                # Aplicar filtro
-                session.data["pedido_filtro"] = seleccion
-                session.data["pedido_pagina"] = 0
-                session.waiting_for = WAITING_PEDIDO_PRODUCTO
-                return self._mostrar_lista_productos(session)
-
-            # Si no eligió una categoría válida
-            session.waiting_for = WAITING_PEDIDO_PRODUCTO
-            return [
-                "No reconocí esa categoría 😅",
-                "Volvemos al listado de productos.",
-            ] + self._mostrar_lista_productos(session)
-
-        # Si se pierde el flujo, volvemos al menú
-        session.state = STATE_MAIN_MENU
-        session.waiting_for = WAITING_NONE
-        session.data.clear()
-        return [
-            "Se perdió el flujo de pedido 😅",
-            "Mandá /ayuda y volvé a elegir la opción 2.",
-        ]
 
 
 # Instancia global para que main.py pueda hacer:
