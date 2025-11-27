@@ -20,8 +20,7 @@ class MessageAggregator:
       - se agrega al buffer de ese user_id
       - se resetea un timer de 10s
     Si pasan 10s sin mensajes nuevos:
-      - se concatenan los textos
-      - se llama al callback de procesamiento
+      - se procesan los mensajes acumulados
     """
 
     def __init__(self):
@@ -42,36 +41,36 @@ class MessageAggregator:
         if task is not None and not task.done():
             task.cancel()
 
-        # Lanzamos un nuevo timer de 10 segundos
+        # Lanzamos un nuevo timer de 3 segundos
         buf["task"] = asyncio.create_task(
             self._wait_and_process(user_id, process_callback)
         )
 
+    async def _wait_and_process(self, user_id: str, process_callback):
+        try:
+            # Esperar 3 segundos desde el último mensaje
+            await asyncio.sleep(3)
 
-async def _wait_and_process(self, user_id: str, process_callback):
-    try:
-        # Esperar 3 segundos desde el último mensaje
-        await asyncio.sleep(3)
+            buf = self._buffers.pop(user_id, None)
+            if not buf:
+                return
 
-        buf = self._buffers.pop(user_id, None)
-        if not buf:
+            texts = buf["texts"]
+            if not texts:
+                return
+
+            # En lugar de concatenar todo en un solo string,
+            # procesamos CADA mensaje por separado, en orden.
+            for t in texts:
+                t = t.strip()
+                if not t:
+                    continue
+
+                await process_callback(user_id, t)
+
+        except asyncio.CancelledError:
+            # El timer se canceló porque llegó un nuevo mensaje
             return
-
-        texts = buf["texts"]
-        if not texts:
-            return
-
-        # En lugar de concatenar todo en un solo string,
-        # procesamos CADA mensaje por separado, en orden.
-        for t in texts:
-            t = t.strip()
-            if not t:
-                continue
-            await process_callback(user_id, t)
-
-    except asyncio.CancelledError:
-        # El timer se canceló porque llegó un nuevo mensaje
-        return
 
 
 message_aggregator = MessageAggregator()
