@@ -421,11 +421,16 @@ class ChatBot:
 
         rows_productos = []
         for p in productos_pagina:
+            # Título corto: solo el nombre, máx 24 caracteres
+            title_text = p.nombre
+            if len(title_text) > 24:
+                title_text = title_text[:23] + "…"
+
             rows_productos.append(
                 {
                     "id": p.id,
-                    "title": f"{p.nombre} - ${p.precio:.0f}",
-                    "description": p.categoria,
+                    "title": title_text,
+                    "description": f"${p.precio:.0f} · {p.categoria}",
                 }
             )
 
