@@ -49,19 +49,24 @@ class MessageAggregator:
 
     async def _wait_and_process(self, user_id: str, process_callback):
         try:
-            # Esperar 10 segundos desde el último mensaje
+            # Esperar 3/10 segundos desde el último mensaje
             await asyncio.sleep(3)
 
             buf = self._buffers.pop(user_id, None)
             if not buf:
                 return
 
-            combined_text = " ".join(buf["texts"]).strip()
-            if not combined_text:
+            texts = buf["texts"]
+            if not texts:
                 return
 
-            # Llamamos al callback que procesa de verdad el mensaje
-            await process_callback(user_id, combined_text)
+            # 🔹 En lugar de concatenar todo en un solo string,
+            # procesamos CADA mensaje por separado, en orden.
+            for t in texts:
+                t = t.strip()
+                if not t:
+                    continue
+                await process_callback(user_id, t)
 
         except asyncio.CancelledError:
             # El timer se canceló porque llegó un nuevo mensaje
