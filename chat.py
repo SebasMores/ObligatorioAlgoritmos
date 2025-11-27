@@ -527,6 +527,14 @@ class ChatBot:
             }
         )
 
+        rows_opciones.append(
+            {
+                "id": "opt_finalizar",
+                "title": "Finalizar pedido",
+                "description": "Ver resumen y confirmar compra",
+            }
+        )
+
         sections = []
         if rows_productos:
             sections.append({"title": "Productos", "rows": rows_productos})
@@ -593,17 +601,18 @@ class ChatBot:
 
         # ================== LISTA DE PRODUCTOS / OPCIONES ==================
         if session.waiting_for == WAITING_PEDIDO_PRODUCTO:
-            # Ver más productos
+
             if lower == "opt_ver_mas":
                 session.data["pedido_pagina"] = session.data.get("pedido_pagina", 0) + 1
                 return self._mostrar_lista_productos(session)
 
-            # Ir a elegir categoría (filtro)
+            if lower == "opt_finalizar":
+                return self._mostrar_resumen_carrito(session)
+
             if lower == "opt_filtrar":
                 session.waiting_for = WAITING_PEDIDO_FILTRO
                 return self._mostrar_lista_categorias(session)
 
-            # Ordenar por precio (toggle asc/desc)
             if lower == "opt_ordenar":
                 orden_actual = session.data.get("pedido_orden", "asc")
                 session.data["pedido_orden"] = (
@@ -612,7 +621,6 @@ class ChatBot:
                 session.data["pedido_pagina"] = 0
                 return self._mostrar_lista_productos(session)
 
-            # Asumimos que cualquier otra cosa es ID de producto
             producto = get_producto_por_id(raw) or get_producto_por_id(lower)
             if producto is None:
                 return [
@@ -620,44 +628,37 @@ class ChatBot:
                     "Usá la lista interactiva para elegir un producto o una opción.",
                 ] + self._mostrar_lista_productos(session)
 
-            # Guardamos el producto elegido en la sesión y pedimos cantidad
             session.data["producto_actual_id"] = producto.id
             session.waiting_for = WAITING_PEDIDO_CANTIDAD
 
             return [
                 f"🛒 Elegiste: *{producto.nombre}* (${producto.precio:.0f}).",
-                "¿Cuántas unidades querés? (ingresá un número entero, por ejemplo: 1, 2, 3)",
+                "¿Cuántas unidades querés? (1, 2, 3...)",
             ]
 
         # ================== PEDIR CANTIDAD ==================
         if session.waiting_for == WAITING_PEDIDO_CANTIDAD:
+
             prod_id = session.data.get("producto_actual_id")
             producto = get_producto_por_id(prod_id) if prod_id else None
 
             if producto is None:
-                # Algo raro: volvemos al listado de productos
                 session.waiting_for = WAITING_PEDIDO_PRODUCTO
                 return [
                     "Se perdió el producto seleccionado 😅",
-                    "Volvemos al listado de productos.",
+                    "Volvemos al listado.",
                 ] + self._mostrar_lista_productos(session)
 
-            # Intentar convertir la cantidad a entero
             try:
                 cantidad = int(raw)
             except ValueError:
                 return [
-                    "Necesito que me indiques una cantidad en números 🙏",
-                    "Por ejemplo: 1, 2, 3...",
+                    "Indicá una cantidad válida en números (1, 2, 3...)",
                 ]
 
             if cantidad <= 0:
-                return [
-                    "La cantidad debe ser un número entero positivo 🙂",
-                    "Por ejemplo: 1, 2, 3...",
-                ]
+                return ["La cantidad debe ser mayor a 0 🙂"]
 
-            # Agregar al carrito
             carrito = session.data.get("carrito", [])
             carrito.append(
                 {
@@ -668,160 +669,100 @@ class ChatBot:
                 }
             )
             session.data["carrito"] = carrito
-            # Ya no necesitamos el producto_actual
             session.data.pop("producto_actual_id", None)
 
             subtotal = cantidad * producto.precio
-            total = sum(item["cantidad"] * item["precio_unitario"] for item in carrito)
+            total = sum(i["cantidad"] * i["precio_unitario"] for i in carrito)
 
             session.waiting_for = WAITING_PEDIDO_CONFIRMAR
 
             return [
-                f"✅ Se agregaron *{cantidad} x {producto.nombre}* al carrito (subtotal: ${subtotal:.0f}).",
-                f"🧾 Total parcial del pedido: ${total:.0f}.",
+                f"✅ Agregado {cantidad} x {producto.nombre} (${subtotal:.0f})",
+                f"Total parcial: ${total:.0f}",
                 "",
-                "¿Qué querés hacer ahora?",
-                "1️⃣ Agregar otro producto",
+                "¿Qué querés hacer?",
+                "1️⃣ Seguir comprando",
                 "2️⃣ Confirmar pedido",
                 "3️⃣ Ver carrito / editar",
             ]
 
-        # ================== CONFIRMAR O SEGUIR AGREGANDO ==================
+        # ================== CONFIRMACIÓN ==================
         if session.waiting_for == WAITING_PEDIDO_CONFIRMAR:
+
             carrito = session.data.get("carrito", [])
 
-            # 1️⃣ Seguir agregando productos
             if lower == "1":
-                session.waiting_for = WAITING_PEDIDO_PRODUCTO
-                return [
-                    "Perfecto, seguimos agregando productos 👍",
-                ] + self._mostrar_lista_productos(session)
-
-            # 2️⃣ Confirmar pedido
-            if lower == "2":
-                if not carrito:
-                    # Por las dudas, si no hay nada en el carrito
-                    session.waiting_for = WAITING_PEDIDO_PRODUCTO
-                    return [
-                        "Todavía no tenés productos en el carrito 😅",
-                        "Elegí alguno de la lista.",
-                    ] + self._mostrar_lista_productos(session)
-
-                lineas = self._formatear_resumen_carrito(carrito)
-                lineas.append("")
-                lineas.append("✅ Pedido confirmado (a modo de simulación).")
-                lineas.append("Si querés empezar de nuevo, mandá */ayuda*.")
-
-                # Cerrar flujo de pedido
-                session.state = STATE_IDLE
-                session.waiting_for = WAITING_NONE
-                session.data.clear()
-
-                return lineas
-
-            # 3️⃣ Ver carrito / editar
-            if lower == "3" or lower in ("ver carrito", "carrito"):
-                if not carrito:
-                    return [
-                        "Tu carrito todavía está vacío 🧺",
-                        "Podés agregar productos desde el menú.",
-                    ] + self._mostrar_lista_productos(session)
-
-                lineas = self._formatear_resumen_carrito(carrito)
-                lineas.append("")
-                lineas.append(
-                    "Si querés eliminar el último producto, escribí *eliminar*."
-                )
-                lineas.append("Si querés vaciar el carrito, escribí *vaciar*.")
-                lineas.append(
-                    "Si querés seguir, respondé *1* para agregar otro producto o *2* para confirmar."
-                )
-                return lineas
-
-            # Eliminar último ítem del carrito
-            if lower.startswith("eliminar"):
-                if carrito:
-                    carrito.pop()
-                    session.data["carrito"] = carrito
-                    resp = ["Se eliminó el último producto del carrito ✅"]
-
-                    if carrito:
-                        resp += self._formatear_resumen_carrito(carrito)
-                    else:
-                        resp.append("El carrito quedó vacío 🧺")
-
-                    resp.append("")
-                    resp.append(
-                        "Respondé *1* para agregar otro producto o *2* para confirmar (si hay productos)."
-                    )
-                    return resp
-                else:
-                    return [
-                        "El carrito ya está vacío 😅",
-                        "Respondé *1* para agregar un producto.",
-                    ]
-
-            # Vaciar carrito
-            if lower.startswith("vaciar"):
-                if carrito:
-                    session.data["carrito"] = []
-                    return [
-                        "Vacié el carrito ✅",
-                        "Respondé *1* para agregar productos de nuevo.",
-                    ]
-                else:
-                    return [
-                        "El carrito ya estaba vacío 🙂",
-                        "Respondé *1* para agregar productos.",
-                    ]
-
-            # Si no respondió nada de lo esperado
-            return [
-                "No entendí esa opción 😅",
-                "Respondé *1* para agregar otro producto, *2* para confirmar el pedido o *3* para ver/editar el carrito.",
-            ]
-
-        # ================== LISTA DE CATEGORÍAS (FILTRO) ==================
-        if session.waiting_for == WAITING_PEDIDO_FILTRO:
-            # Esperamos ids tipo: cat_pizzas, cat_bebidas, cat_todos, etc.
-            if lower.startswith("cat_"):
-                categorias = obtener_categorias()
-                seleccion = None
-                for cat in categorias:
-                    cat_id = "cat_" + cat.lower().replace(" ", "_")
-                    if cat_id == lower:
-                        seleccion = cat
-                        break
-
-                if seleccion is None:
-                    # Algo raro: volvemos al listado sin cambiar nada
-                    session.waiting_for = WAITING_PEDIDO_PRODUCTO
-                    return [
-                        "No reconocí esa categoría 😅",
-                        "Volvemos al listado de productos.",
-                    ] + self._mostrar_lista_productos(session)
-
-                # Aplicar filtro
-                session.data["pedido_filtro"] = seleccion
-                session.data["pedido_pagina"] = 0
                 session.waiting_for = WAITING_PEDIDO_PRODUCTO
                 return self._mostrar_lista_productos(session)
 
-            # Si no eligió una categoría válida
-            session.waiting_for = WAITING_PEDIDO_PRODUCTO
+            if lower == "2":
+                resumen = self._formatear_resumen_carrito(carrito)
+                resumen.append("✅ Pedido confirmado (simulación)")
+                session.state = STATE_IDLE
+                session.waiting_for = WAITING_NONE
+                session.data.clear()
+                return resumen
+
+            if lower == "3":
+                return self._formatear_resumen_carrito(carrito)
+
+            if lower.startswith("eliminar"):
+                if carrito:
+                    carrito.pop()
+                session.data["carrito"] = carrito
+                return self._formatear_resumen_carrito(carrito)
+
+            if lower.startswith("vaciar"):
+                session.data["carrito"] = []
+                return ["Carrito vaciado 🧺"]
+
             return [
-                "No reconocí esa categoría 😅",
-                "Volvemos al listado de productos.",
+                "Opción inválida 😅",
+                "1 seguir, 2 confirmar, 3 ver carrito",
+            ]
+
+        # ================== FILTRO ==================
+        if session.waiting_for == WAITING_PEDIDO_FILTRO:
+
+            if lower.startswith("cat_"):
+                categorias = obtener_categorias()
+
+                for cat in categorias:
+                    if "cat_" + cat.lower().replace(" ", "_") == lower:
+                        session.data["pedido_filtro"] = cat
+                        session.data["pedido_pagina"] = 0
+                        break
+
+            session.waiting_for = WAITING_PEDIDO_PRODUCTO
+            return self._mostrar_lista_productos(session)
+
+    def _mostrar_resumen_carrito(self, session: ChatSession):
+
+        carrito = session.data.get("carrito", [])
+
+        if not carrito:
+            return [
+                "🧺 Tu carrito está vacío.",
+                "Agregá productos antes de finalizar.",
             ] + self._mostrar_lista_productos(session)
 
-        # ================== FALLBACK ==================
-        session.state = STATE_MAIN_MENU
-        session.waiting_for = WAITING_NONE
-        session.data.clear()
-        return [
-            "Se perdió el flujo de pedido 😅",
-            "Mandá /ayuda y volvé a elegir la opción 2.",
-        ]
+        mensaje = ["🧾 *Resumen del pedido:*", ""]
+
+        total = 0
+        for item in carrito:
+            subtotal = item["cantidad"] * item["precio_unitario"]
+            total += subtotal
+            mensaje.append(f"{item['nombre']} x{item['cantidad']} → ${subtotal:.0f}")
+
+        mensaje.append("")
+        mensaje.append(f"💰 Total: ${total:.0f}")
+        mensaje.append("")
+        mensaje.append("¿Confirmás el pedido?")
+        mensaje.append("1️⃣ Confirmar")
+        mensaje.append("2️⃣ Cancelar")
+
+        session.waiting_for = WAITING_PEDIDO_CONFIRMAR
+        return mensaje
 
 
 # Instancia global para que main.py pueda hacer:
