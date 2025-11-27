@@ -67,6 +67,7 @@ class ChatBot:
             "buenas tardes",
             "buenas noches",
         ):
+
             session.state = STATE_IDLE
             session.waiting_for = WAITING_NONE
             session.data.clear()
@@ -132,6 +133,15 @@ class ChatBot:
                     ],
                 }
             ]
+
+        if lower == "/carrito":
+            carrito = session.data.get("carrito", [])
+            if not carrito:
+                return [
+                    "Tu carrito está vacío 🧺",
+                    "Elegí la opción *2* en /ayuda para empezar un pedido.",
+                ]
+            return self._formatear_resumen_carrito(carrito)
 
         # Si no está en ningún flujo, redirigimos a /ayuda
         if session.state == STATE_IDLE:
@@ -401,6 +411,25 @@ class ChatBot:
 
     # ================= OPCIÓN 2: PEDIDO =================
 
+    def _formatear_resumen_carrito(self, carrito):
+        """
+        Devuelve una lista de líneas de texto con el resumen del carrito.
+        """
+        if not carrito:
+            return ["Tu carrito está vacío 🧺"]
+
+        lineas = ["🧺 *Carrito actual:*", ""]
+        total = 0
+
+        for item in carrito:
+            sub = item["cantidad"] * item["precio_unitario"]
+            total += sub
+            lineas.append(f"- {item['cantidad']} x {item['nombre']} = ${sub:.0f}")
+
+        lineas.append("")
+        lineas.append(f"💰 *Total:* ${total:.0f}")
+        return lineas
+
     def _get_productos_filtrados(self, session: ChatSession):
         """
         Devuelve la lista de productos aplicando:
@@ -654,21 +683,22 @@ class ChatBot:
                 "¿Qué querés hacer ahora?",
                 "1️⃣ Agregar otro producto",
                 "2️⃣ Confirmar pedido",
+                "3️⃣ Ver carrito / editar",
             ]
 
         # ================== CONFIRMAR O SEGUIR AGREGANDO ==================
         if session.waiting_for == WAITING_PEDIDO_CONFIRMAR:
             carrito = session.data.get("carrito", [])
 
+            # 1️⃣ Seguir agregando productos
             if lower == "1":
-                # Seguir agregando productos
                 session.waiting_for = WAITING_PEDIDO_PRODUCTO
                 return [
                     "Perfecto, seguimos agregando productos 👍",
                 ] + self._mostrar_lista_productos(session)
 
+            # 2️⃣ Confirmar pedido
             if lower == "2":
-                # Confirmar pedido → mostrar resumen y cerrar flujo
                 if not carrito:
                     # Por las dudas, si no hay nada en el carrito
                     session.waiting_for = WAITING_PEDIDO_PRODUCTO
@@ -677,17 +707,7 @@ class ChatBot:
                         "Elegí alguno de la lista.",
                     ] + self._mostrar_lista_productos(session)
 
-                lineas = ["🧺 *Resumen del pedido:*", ""]
-                total = 0
-                for item in carrito:
-                    sub = item["cantidad"] * item["precio_unitario"]
-                    total += sub
-                    lineas.append(
-                        f"- {item['cantidad']} x {item['nombre']} = ${sub:.0f}"
-                    )
-
-                lineas.append("")
-                lineas.append(f"💰 *Total a pagar:* ${total:.0f}")
+                lineas = self._formatear_resumen_carrito(carrito)
                 lineas.append("")
                 lineas.append("✅ Pedido confirmado (a modo de simulación).")
                 lineas.append("Si querés empezar de nuevo, mandá */ayuda*.")
@@ -699,10 +719,66 @@ class ChatBot:
 
                 return lineas
 
-            # Si no respondió 1 o 2
+            # 3️⃣ Ver carrito / editar
+            if lower == "3" or lower in ("ver carrito", "carrito"):
+                if not carrito:
+                    return [
+                        "Tu carrito todavía está vacío 🧺",
+                        "Podés agregar productos desde el menú.",
+                    ] + self._mostrar_lista_productos(session)
+
+                lineas = self._formatear_resumen_carrito(carrito)
+                lineas.append("")
+                lineas.append(
+                    "Si querés eliminar el último producto, escribí *eliminar*."
+                )
+                lineas.append("Si querés vaciar el carrito, escribí *vaciar*.")
+                lineas.append(
+                    "Si querés seguir, respondé *1* para agregar otro producto o *2* para confirmar."
+                )
+                return lineas
+
+            # Eliminar último ítem del carrito
+            if lower.startswith("eliminar"):
+                if carrito:
+                    carrito.pop()
+                    session.data["carrito"] = carrito
+                    resp = ["Se eliminó el último producto del carrito ✅"]
+
+                    if carrito:
+                        resp += self._formatear_resumen_carrito(carrito)
+                    else:
+                        resp.append("El carrito quedó vacío 🧺")
+
+                    resp.append("")
+                    resp.append(
+                        "Respondé *1* para agregar otro producto o *2* para confirmar (si hay productos)."
+                    )
+                    return resp
+                else:
+                    return [
+                        "El carrito ya está vacío 😅",
+                        "Respondé *1* para agregar un producto.",
+                    ]
+
+            # Vaciar carrito
+            if lower.startswith("vaciar"):
+                if carrito:
+                    session.data["carrito"] = []
+                    return [
+                        "Vacié el carrito ✅",
+                        "Respondé *1* para agregar productos de nuevo.",
+                    ]
+                else:
+                    return [
+                        "El carrito ya estaba vacío 🙂",
+                        "Respondé *1* para agregar productos.",
+                    ]
+
+            # Si no respondió nada de lo esperado
             return [
                 "No entendí esa opción 😅",
-                "Respondé *1* para agregar otro producto o *2* para confirmar el pedido.",
+                "Respondé *1* para agregar otro producto, *2* para confirmar el pedido o *3* para ver/editar el carrito.",
             ]
 
         # ================== LISTA DE CATEGORÍAS (FILTRO) ==================
