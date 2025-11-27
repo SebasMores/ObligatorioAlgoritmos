@@ -81,6 +81,9 @@ async def process_user_message(user_id: str, text: str):
     for r in respuestas:
         # Caso clásico: respuesta de texto
         if isinstance(r, str):
+            # 👇 Evitar enviar mensajes vacíos o solo espacios
+            if not r.strip():
+                continue
             send_text_message(user_id, r)
             continue
 
