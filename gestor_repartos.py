@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Deque, Dict, List, Optional
-
-from models.pedidos import Pedido
-from models.zona import Zona
 
 import uuid
 import random
 import string
+
+from models.pedidos import Pedido
+from models.zona import Zona
+from models.tanda_pedidos import TandaPedidos
+
+# Más adelante usaremos NodoPedido para el BST
+# from models.arbol_pedidos import NodoPedido
 
 # Coordenadas del restaurante (las podés ajustar si querés)
 # Usamos algo similar al "centro" que ya tenés en chat.py
@@ -23,27 +27,33 @@ RESTAURANTE_LON = -57.9667
 class GestorRepartos:
     """
     Gestor central de la Opción 3:
+
     - Registra pedidos confirmados.
     - Los clasifica en zonas (NO / NE / SO / SE).
     - Mantiene una cola de pedidos por zona.
 
-    Más adelante acá se van a manejar:
-    - formación de tandas
-    - asignación de tandas a repartidores
-    - BST por distancia, etc.
+    Ahora además:
+    - Forma tandas de pedidos por zona (7 pedidos o 45 minutos).
+    - Guarda una cola de tandas sin repartidor asignado.
     """
 
     def __init__(self) -> None:
         # Todos los pedidos por id
         self.pedidos: Dict[str, Pedido] = {}
 
-        # Una cola por zona
+        # Una cola de pedidos por zona
         self.cola_por_zona: Dict[Zona, Deque[Pedido]] = {
             Zona.NO: deque(),
             Zona.NE: deque(),
             Zona.SO: deque(),
             Zona.SE: deque(),
         }
+
+        # Tandas creadas por id
+        self.tandas: Dict[str, TandaPedidos] = {}
+
+        # Cola de tandas aún sin repartidor asignado
+        self.cola_tandas_sin_repartidor: Deque[TandaPedidos] = deque()
 
     # ==========================================================
     #  CÁLCULO DE ZONA
@@ -56,11 +66,11 @@ class GestorRepartos:
 
         En Uruguay las latitudes son negativas:
         - Más "al norte" = valor de latitud más alto (menos negativo).
-        Ej: -31.37 > -31.39  → -31.37 está más al norte.
+          Ej: -31.37 > -31.39  → -31.37 está más al norte.
 
         Longitud (también negativa):
         - Más "al este" = valor de longitud más alto (menos negativo).
-        Ej: -57.95 > -57.99 → -57.95 está más al este.
+          Ej: -57.95 > -57.99 → -57.95 está más al este.
         """
 
         # Norte vs Sur
@@ -83,7 +93,8 @@ class GestorRepartos:
     def registrar_pedido(self, pedido: Pedido) -> None:
         """
         Recibe un Pedido ya armado, calcula (o corrige) la zona
-        y lo encola en la cola correspondiente.
+        y lo encola en la cola correspondiente. Luego verifica
+        si corresponde formar una tanda en esa zona.
         """
         zona = self.calcular_zona(pedido.lat, pedido.lon)
         pedido.zona = zona.value  # guardamos como string "NO", "NE", etc.
@@ -99,14 +110,23 @@ class GestorRepartos:
             f"Total cola zona {zona.value}: {len(self.cola_por_zona[zona])}"
         )
 
+        # Después de encolar, revisamos si hay que formar una tanda
+        self._chequear_formar_tanda(zona)
+
     # ==========================================================
-    #  HELPERS PARA CREAR PEDIDO DESDE EL CARRITO
+    #  FORMACIÓN DE TANDAS POR ZONA
     # ==========================================================
     def _generar_id_pedido(self) -> str:
         """
         Genera un id corto tipo 'P-3FA9B2C1'
         """
         return "P-" + uuid.uuid4().hex[:8].upper()
+
+    def _generar_id_tanda(self) -> str:
+        """
+        Genera un id corto tipo 'T-ABC123'
+        """
+        return "T-" + uuid.uuid4().hex[:6].upper()
 
     def _generar_codigo_confirmacion(self, length: int = 6) -> str:
         """
@@ -116,6 +136,60 @@ class GestorRepartos:
         chars = string.ascii_uppercase + string.digits
         return "".join(random.choices(chars, k=length))
 
+    def _chequear_formar_tanda(self, zona: Zona) -> None:
+        """
+        Revisa la cola de la zona indicada y, si se cumple alguna condición,
+        forma una TandaPedidos:
+
+        - Si la cola tiene 7 o más pedidos → toma hasta 7 y arma una tanda.
+        - Si el primer pedido lleva >= 45 minutos esperando → arma la tanda
+          con los pedidos que haya (hasta 7).
+        """
+        cola = self.cola_por_zona[zona]
+        if not cola:
+            return
+
+        ahora = datetime.utcnow()
+        formar = False
+
+        # Regla 1: hay 7 o más pedidos
+        if len(cola) >= 7:
+            formar = True
+        else:
+            # Regla 2: el primero lleva >= 45 minutos
+            primero = cola[0]
+            if ahora - primero.ts_confirmado >= timedelta(minutes=45):
+                formar = True
+
+        if not formar:
+            return
+
+        # Sacamos hasta 7 pedidos de la cola para formar la tanda
+        pedidos_tanda: List[Pedido] = []
+        while cola and len(pedidos_tanda) < 7:
+            pedidos_tanda.append(cola.popleft())
+
+        tanda_id = self._generar_id_tanda()
+        tanda = TandaPedidos(
+            id=tanda_id,
+            zona=zona.value,
+            pedidos=pedidos_tanda,
+        )
+
+        # Guardamos la tanda
+        self.tandas[tanda_id] = tanda
+        # Por ahora, todas las tandas van a la cola "sin repartidor"
+        self.cola_tandas_sin_repartidor.append(tanda)
+
+        print(
+            f"[GESTOR] Tanda {tanda_id} creada en zona {zona.value} "
+            f"con {len(pedidos_tanda)} pedidos. "
+            f"Tandas en espera: {len(self.cola_tandas_sin_repartidor)}"
+        )
+
+    # ==========================================================
+    #  HELPERS PARA CREAR PEDIDO DESDE EL CARRITO
+    # ==========================================================
     def crear_y_registrar_pedido_desde_carrito(
         self,
         wa_id_cliente: str,
