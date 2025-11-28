@@ -455,7 +455,7 @@ class ChatBot:
         Muestra hasta 5 productos por página, con:
         - Filtro por categoría
         - Orden por precio asc/desc (toggle)
-        - Opciones: ver más, filtrar, ordenar
+        - Opciones: ver más, filtrar, ordenar, finalizar, volver al menú
         """
 
         pagina = session.data.get("pedido_pagina", 0)
@@ -514,10 +514,7 @@ class ChatBot:
 
         # Opción de ordenar por precio (toggle asc/desc)
         orden_actual = session.data.get("pedido_orden", "asc")
-        if orden_actual == "asc":
-            desc_opcion = "Descendente"
-        else:
-            desc_opcion = "Ascendente"
+        desc_opcion = "Descendente" if orden_actual == "asc" else "Ascendente"
 
         rows_opciones.append(
             {
@@ -527,11 +524,21 @@ class ChatBot:
             }
         )
 
+        # Finalizar pedido (ver resumen + confirmar)
         rows_opciones.append(
             {
                 "id": "opt_finalizar",
                 "title": "Finalizar pedido",
                 "description": "Ver resumen y confirmar compra",
+            }
+        )
+
+        # 🔙 NUEVO: Volver al menú principal
+        rows_opciones.append(
+            {
+                "id": "opt_volver_menu",
+                "title": "Volver al menú",
+                "description": "Cancelar pedido y volver al menú principal",
             }
         )
 
@@ -543,7 +550,10 @@ class ChatBot:
 
         filtro_actual = session.data.get("pedido_filtro", "Todos")
         orden_texto = "Ascendente" if orden_actual == "asc" else "Descendente"
-        body_text = f"Página {pagina + 1}/{total_paginas} · Filtro: {filtro_actual} · Orden: {orden_texto}"
+        body_text = (
+            f"Página {pagina + 1}/{total_paginas} · "
+            f"Filtro: {filtro_actual} · Orden: {orden_texto}"
+        )
 
         return [
             {
@@ -623,6 +633,15 @@ class ChatBot:
                 )
                 session.data["pedido_pagina"] = 0
                 return self._mostrar_lista_productos(session)
+
+            if lower == "opt_volver_menu":
+                # Cancelamos el flujo de pedido y volvemos al menú
+                session.state = STATE_MAIN_MENU
+                session.waiting_for = WAITING_NONE
+                session.data.clear()
+                return [
+                    "↩️ Volviste al *menú principal*.",
+                ] + self._handle_ayuda(session)
 
             # Asumimos que cualquier otra cosa es ID de producto
             producto = get_producto_por_id(raw) or get_producto_por_id(lower)
