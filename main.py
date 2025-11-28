@@ -1,8 +1,9 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
-from services.whatsapp_client import send_text_message
+from pydantic import BaseModel  # 👈 NUEVO
 from services.whatsapp_client import send_text_message, send_interactive_list_message
 from chat import bot
+from gestor_repartos import gestor_repartos  # 👈 NUEVO
 import asyncio
 
 app = FastAPI()
@@ -104,6 +105,38 @@ async def process_user_message(user_id: str, text: str):
                 sections=sections,
             )
             continue
+
+
+# ================== ENDPOINTS REPARTIDORES ==================
+
+
+class RepartidorCreate(BaseModel):
+    nombre: str
+    wa_id: str  # número de WhatsApp con código de país
+
+
+@app.post("/repartidores")
+async def crear_repartidor(data: RepartidorCreate):
+    """
+    Endpoint para registrar un nuevo repartidor.
+
+    Ejemplo de request (JSON):
+    {
+        "nombre": "Juan Perez",
+        "wa_id": "59891234567"
+    }
+    """
+    repartidor = gestor_repartos.registrar_repartidor(
+        nombre=data.nombre,
+        wa_id=data.wa_id,
+    )
+
+    return {
+        "id": repartidor.id,
+        "nombre": repartidor.nombre,
+        "wa_id": repartidor.wa_id,
+        "estado": repartidor.estado,
+    }
 
 
 # ================== ENDPOINTS WHATSAPP ==================
