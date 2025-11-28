@@ -67,6 +67,13 @@ class ChatBot:
 
         session.data.setdefault("wa_id", user_id)
 
+        from gestor_repartos import gestor_repartos
+
+        repartidor = gestor_repartos.obtener_repartidor_por_wa(user_id)
+
+        if repartidor:
+            return self._handle_repartidor(repartidor, text)
+
         text = text or ""
         raw = text.strip()
         lower = raw.lower()
@@ -866,16 +873,14 @@ class ChatBot:
             )
 
             # Armamos mensaje final al cliente
-            lineas = self._formatear_resumen_carrito(carrito)
-            lineas.append("")
-            lineas.append(f"📍 Ubicación registrada: *{lugar_nombre}*.")
-            lineas.append(
+            lineas = [
+                f"📍 Ubicación registrada: *{lugar_nombre}*.",
                 f"🔐 Código de entrega: *{pedido.codigo_confirmacion}* "
-                "(mostralo al repartidor cuando llegue)."
-            )
-            lineas.append("")
-            lineas.append("✅ Pedido confirmado. ¡Gracias por tu compra! 🙌")
-            lineas.append("Si querés hacer otro pedido, mandá */ayuda*.")
+                "(mostralo al repartidor cuando llegue).",
+                "",
+                "✅ Pedido confirmado. ¡Gracias por tu compra! 🙌",
+                "Si querés hacer otro pedido, mandá */ayuda*.",
+            ]
 
             # Cerramos flujo de pedido
             session.state = STATE_IDLE
@@ -954,6 +959,46 @@ class ChatBot:
 
         session.waiting_for = WAITING_PEDIDO_CONFIRMAR
         return mensaje
+
+    def _handle_repartidor(self, repartidor, text: str) -> List[str]:
+        lower = (text or "").strip().lower()
+
+        if lower in ("/start", "hola", "menu"):
+            return [
+                "👷 *Modo Repartidor activo*",
+                "",
+                "1️⃣ Ver mi tanda actual",
+                "2️⃣ Marcar pedido como entregado",
+                "3️⃣ Estado general",
+                "",
+                "Respondé con una opción.",
+            ]
+
+        if lower == "1":
+            tanda = repartidor.tanda_actual
+            if not tanda:
+                return ["📭 No tenés ninguna tanda asignada por ahora."]
+            return [
+                f"📦 Tanda asignada: {tanda.id}",
+                f"Zona: {tanda.zona}",
+                f"Pedidos en tanda: {len(tanda.pedidos)}",
+            ]
+
+        if lower == "2":
+            return ["✅ (Simulación) Pedido marcado como entregado.", "En evolución..."]
+
+        if lower == "3":
+            return [
+                f"🚚 Estado: {repartidor.estado}",
+                f"Pedidos entregados: {repartidor.pedidos_entregados}",
+            ]
+
+        return [
+            "👷 Menú repartidor",
+            "1️⃣ Ver mi tanda actual",
+            "2️⃣ Marcar pedido como entregado",
+            "3️⃣ Estado general",
+        ]
 
 
 # Instancia global para que main.py pueda hacer:
