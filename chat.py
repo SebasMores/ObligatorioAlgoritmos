@@ -978,20 +978,48 @@ class ChatBot:
             tanda = repartidor.tanda_actual
             if not tanda:
                 return ["📭 No tenés ninguna tanda asignada por ahora."]
-            return [
+
+            lineas = [
                 f"📦 Tanda asignada: {tanda.id}",
                 f"Zona: {tanda.zona}",
                 f"Pedidos en tanda: {len(tanda.pedidos)}",
+                "",
+                "📋 Pedidos:",
             ]
+
+            for i, pedido in enumerate(tanda.pedidos, start=1):
+                lineas.append(
+                    f"{i}. Pedido {pedido.id} - ${pedido.total} - {pedido.wa_id_cliente}"
+                )
+
+            return lineas
 
         if lower == "2":
-            return ["✅ (Simulación) Pedido marcado como entregado.", "En evolución..."]
+            tanda = repartidor.tanda_actual
+            if not tanda or not tanda.pedidos:
+                return ["No hay pedidos para marcar como entregados."]
 
-        if lower == "3":
-            return [
-                f"🚚 Estado: {repartidor.estado}",
-                f"Pedidos entregados: {repartidor.pedidos_entregados}",
+            pedido = tanda.pedidos.pop(0)
+            repartidor.pedidos_entregados += 1
+
+            msg = [
+                f"✅ Pedido {pedido.id} marcado como entregado.",
+                f"Cliente: {pedido.wa_id_cliente}",
+                f"Importe: ${pedido.total}",
             ]
+
+            if tanda.pedidos:
+                msg.append("")
+                msg.append(
+                    f"Quedan {len(tanda.pedidos)} pedidos pendientes en esta tanda."
+                )
+        else:
+            repartidor.tanda_actual = None
+            repartidor.estado = "disponible"
+            msg.append("")
+            msg.append("🎉 Tanda finalizada. Estás disponible nuevamente.")
+
+            return msg
 
         return [
             "👷 Menú repartidor",
