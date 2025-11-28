@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 from models.productos import PRODUCTOS, get_producto_por_id, obtener_categorias
 import math
+from gestor_repartos import gestor_repartos
 
 # Estados de la conversación
 STATE_IDLE = "IDLE"
@@ -19,6 +20,20 @@ WAITING_PEDIDO_PRODUCTO = "PEDIDO_PRODUCTO"
 WAITING_PEDIDO_FILTRO = "PEDIDO_FILTRO"
 WAITING_PEDIDO_CANTIDAD = "PEDIDO_CANTIDAD"
 WAITING_PEDIDO_CONFIRMAR = "PEDIDO_CONFIRMAR"
+WAITING_PEDIDO_UBICACION = "PEDIDO_UBICACION"
+
+# Lugares de referencia en Salto para usar tanto en la opción 1 como en la 2 (pedido)
+LUGARES_SALTO: Dict[str, tuple[float, float]] = {
+    "centro": (-31.3833, -57.9667),
+    "plaza artigas": (-31.3825, -57.9658),
+    "hospital": (-31.3891, -57.9554),
+    "hospital regional": (-31.3891, -57.9554),
+    "terminal": (-31.3878, -57.9640),
+    "terminal de omnibus": (-31.3878, -57.9640),
+    "costanera sur": (-31.3795, -57.9525),
+    "shopping": (-31.3715, -57.9580),
+    "shopping salto": (-31.3715, -57.9580),
+}
 
 
 @dataclass
@@ -49,6 +64,8 @@ class ChatBot:
     # --------- API pública ---------
     def handle_message(self, user_id: str, text: str) -> List[Any]:
         session = self._get_session(user_id)
+
+        session.data.setdefault("wa_id", user_id)
 
         text = text or ""
         raw = text.strip()
@@ -233,26 +250,14 @@ class ChatBot:
     ) -> List[str]:
         """
         Flujo de la opción 1: cálculo de ruta con Dijkstra / A*.
+        Usa el diccionario global LUGARES_SALTO.
         """
-
-        # Mapeo de nombres de lugares (texto) a coordenadas (lat, lon)
-        lugares: Dict[str, tuple[float, float]] = {
-            "centro": (-31.3833, -57.9667),
-            "plaza artigas": (-31.3825, -57.9658),
-            "hospital": (-31.3891, -57.9554),
-            "hospital regional": (-31.3891, -57.9554),
-            "terminal": (-31.3878, -57.9640),
-            "terminal de omnibus": (-31.3878, -57.9640),
-            "costanera sur": (-31.3795, -57.9525),
-            "shopping": (-31.3715, -57.9580),
-            "shopping salto": (-31.3715, -57.9580),
-        }
 
         # ---------- Paso 1: ORIGEN ----------
         if session.waiting_for == WAITING_RUTA_ORIGEN:
             origen_nombre = lower.strip()
 
-            if origen_nombre not in lugares:
+            if origen_nombre not in LUGARES_SALTO:
                 return [
                     "⚠️ No reconocí ese origen.",
                     "Probá con: plaza artigas, terminal, hospital, centro, shopping, costanera sur.",
@@ -271,7 +276,7 @@ class ChatBot:
             destino_nombre = lower.strip()
             origen_nombre = session.data.get("origen_nombre")
 
-            if destino_nombre not in lugares:
+            if destino_nombre not in LUGARES_SALTO:
                 return [
                     "⚠️ No reconocí ese destino.",
                     "Probá con: plaza artigas, terminal, hospital, centro, shopping, costanera sur.",
@@ -343,8 +348,9 @@ class ChatBot:
                     "Avisale al profe que revise las dependencias (osmnx, networkx, etc.).",
                 ]
 
-            orig_coord = lugares[origen_nombre]
-            dest_coord = lugares[destino_nombre]
+            # 👇 AHORA usamos LUGARES_SALTO en lugar de 'lugares'
+            orig_coord = LUGARES_SALTO[origen_nombre]
+            dest_coord = LUGARES_SALTO[destino_nombre]
 
             try:
                 origen_nodo = ox.distance.nearest_nodes(G, orig_coord[1], orig_coord[0])
@@ -398,6 +404,7 @@ class ChatBot:
 
             return mensaje
 
+        # Fallback si se pierde el estado
         session.state = STATE_IDLE
         session.waiting_for = WAITING_NONE
         session.data.clear()
@@ -728,7 +735,7 @@ class ChatBot:
                     "Perfecto, seguimos agregando productos 👍",
                 ] + self._mostrar_lista_productos(session)
 
-            # 2️⃣ Confirmar pedido
+                # 2️⃣ Confirmar pedido
             if lower == "2":
                 if not carrito:
                     # Por las dudas, si no hay nada en el carrito
@@ -738,17 +745,24 @@ class ChatBot:
                         "Elegí alguno de la lista.",
                     ] + self._mostrar_lista_productos(session)
 
-                lineas = self._formatear_resumen_carrito(carrito)
-                lineas.append("")
-                lineas.append("✅ Pedido confirmado (a modo de simulación).")
-                lineas.append("Si querés empezar de nuevo, mandá */ayuda*.")
+                # Antes de confirmar definitivamente, pedimos la ubicación aproximada
+                session.waiting_for = WAITING_PEDIDO_UBICACION
 
-                # Cerrar flujo de pedido
-                session.state = STATE_IDLE
-                session.waiting_for = WAITING_NONE
-                session.data.clear()
+                instrucciones_ubicacion = [
+                    "",
+                    "📍 Antes de confirmar necesito tu *ubicación aproximada* en Salto.",
+                    "Escribí uno de estos lugares (tal cual):",
+                    "- centro",
+                    "- plaza artigas",
+                    "- hospital",
+                    "- terminal",
+                    "- costanera sur",
+                    "- shopping",
+                ]
 
-                return lineas
+                return (
+                    self._formatear_resumen_carrito(carrito) + instrucciones_ubicacion
+                )
 
             # 3️⃣ Ver carrito / editar
             if lower == "3" or lower in ("ver carrito", "carrito"):
@@ -812,7 +826,65 @@ class ChatBot:
                 "Respondé *1* para agregar otro producto, *2* para confirmar el pedido o *3* para ver/editar el carrito.",
             ]
 
-            # ================== LISTA DE CATEGORÍAS (FILTRO) ==================
+            # ================== UBICACIÓN DEL CLIENTE ==================
+        if session.waiting_for == WAITING_PEDIDO_UBICACION:
+            carrito = session.data.get("carrito", [])
+            if not carrito:
+                # Si algo raro pasó y se perdió el carrito
+                session.state = STATE_MAIN_MENU
+                session.waiting_for = WAITING_NONE
+                session.data.clear()
+                return [
+                    "Se perdió la información del carrito 😕",
+                    "Mandá /ayuda para empezar de nuevo.",
+                ]
+
+            lugar_nombre = lower.strip()
+
+            if lugar_nombre not in LUGARES_SALTO:
+                # Ubicación no reconocida
+                return [
+                    "⚠️ No reconocí ese lugar.",
+                    "Escribí uno de estos lugares (todo en minúsculas):",
+                    "- centro",
+                    "- plaza artigas",
+                    "- hospital",
+                    "- terminal",
+                    "- costanera sur",
+                    "- shopping",
+                ]
+
+            lat, lon = LUGARES_SALTO[lugar_nombre]
+            wa_id = session.data.get("wa_id", "")
+
+            # Creamos y registramos el Pedido en el Gestor de Repartos
+            pedido = gestor_repartos.crear_y_registrar_pedido_desde_carrito(
+                wa_id_cliente=wa_id,
+                carrito=carrito,
+                lat=lat,
+                lon=lon,
+            )
+
+            # Armamos mensaje final al cliente
+            lineas = self._formatear_resumen_carrito(carrito)
+            lineas.append("")
+            lineas.append(f"📍 Ubicación registrada: *{lugar_nombre}*.")
+            lineas.append(
+                f"🔐 Código de entrega: *{pedido.codigo_confirmacion}* "
+                "(mostralo al repartidor cuando llegue)."
+            )
+            lineas.append("")
+            lineas.append("✅ Pedido confirmado. ¡Gracias por tu compra! 🙌")
+            lineas.append("Si querés hacer otro pedido, mandá */ayuda*.")
+
+            # Cerramos flujo de pedido
+            session.state = STATE_IDLE
+            session.waiting_for = WAITING_NONE
+            session.data.clear()
+
+            return lineas
+
+        # ================== LISTA DE CATEGORÍAS (FILTRO) ==================
         if session.waiting_for == WAITING_PEDIDO_FILTRO:
             # Esperamos ids tipo: cat_pizzas, cat_bebidas, cat_todos, etc.
             if lower.startswith("cat_"):
@@ -875,9 +947,10 @@ class ChatBot:
         mensaje.append("")
         mensaje.append(f"💰 Total: ${total:.0f}")
         mensaje.append("")
-        mensaje.append("¿Confirmás el pedido?")
-        mensaje.append("1️⃣ Confirmar")
-        mensaje.append("2️⃣ Cancelar")
+        mensaje.append("¿Qué querés hacer ahora?")
+        mensaje.append("1️⃣ Agregar otro producto")
+        mensaje.append("2️⃣ Confirmar pedido")
+        mensaje.append("3️⃣ Ver carrito / editar")
 
         session.waiting_for = WAITING_PEDIDO_CONFIRMAR
         return mensaje
