@@ -1013,13 +1013,19 @@ class ChatBot:
                 msg.append(
                     f"Quedan {len(tanda.pedidos)} pedidos pendientes en esta tanda."
                 )
-        else:
-            repartidor.tanda_actual = None
-            repartidor.estado = "disponible"
-            msg.append("")
-            msg.append("🎉 Tanda finalizada. Estás disponible nuevamente.")
+            else:
+                repartidor.tanda_actual = None
+                repartidor.estado = "disponible"
+                msg.append("")
+                msg.append("🎉 Tanda finalizada. Estás disponible nuevamente.")
 
             return msg
+
+        if lower == "3":
+            return [
+                f"🚚 Estado: {repartidor.estado}",
+                f"Pedidos entregados: {repartidor.pedidos_entregados}",
+            ]
 
         return [
             "👷 Menú repartidor",
