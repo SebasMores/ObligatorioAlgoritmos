@@ -21,6 +21,7 @@ WAITING_PEDIDO_FILTRO = "PEDIDO_FILTRO"
 WAITING_PEDIDO_CANTIDAD = "PEDIDO_CANTIDAD"
 WAITING_PEDIDO_CONFIRMAR = "PEDIDO_CONFIRMAR"
 WAITING_PEDIDO_UBICACION = "PEDIDO_UBICACION"
+WAITING_REPARTIDOR_MARCAR = "REPARTIDOR_MARCAR"
 
 # Lugares de referencia en Salto para usar tanto en la opción 1 como en la 2 (pedido)
 LUGARES_SALTO: Dict[str, tuple[float, float]] = {
@@ -72,7 +73,7 @@ class ChatBot:
         repartidor = gestor_repartos.obtener_repartidor_por_wa(user_id)
 
         if repartidor:
-            return self._handle_repartidor(repartidor, text)
+            return self._handle_repartidor(session, repartidor, text)
 
         text = text or ""
         raw = text.strip()
@@ -960,10 +961,118 @@ class ChatBot:
         session.waiting_for = WAITING_PEDIDO_CONFIRMAR
         return mensaje
 
-    def _handle_repartidor(self, repartidor, text: str) -> List[str]:
+    def _handle_repartidor(
+        self,
+        session: ChatSession,
+        repartidor,
+        text: str,
+    ) -> List[str]:
+        """
+        Flujo del modo repartidor.
+
+        Menú:
+          1 -> ver tanda actual.
+          2 -> entrar en modo 'marcar pedido', donde elige 1, 2, 3...
+          3 -> ver estado general.
+        """
+
+        from gestor_repartos import gestor_repartos  # para reasignar tandas si termina
+
         lower = (text or "").strip().lower()
 
+        # ============== MODO SELECCIONAR PEDIDO A MARCAR ==============
+        if session.waiting_for == WAITING_REPARTIDOR_MARCAR and lower not in (
+            "/start",
+            "hola",
+            "menu",
+        ):
+            tanda = repartidor.tanda_actual
+            if not tanda or not tanda.pedidos:
+                # No hay nada para marcar, volvemos al menú
+                session.waiting_for = None
+                return [
+                    "📭 Ya no quedan pedidos en tu tanda actual.",
+                    "",
+                    "👷 *Menú Repartidor*",
+                    "1️⃣ Ver mi tanda actual",
+                    "2️⃣ Marcar pedido como entregado",
+                    "3️⃣ Estado general",
+                ]
+
+            # Permitir cancelar
+            if lower in ("0", "salir", "cancelar"):
+                session.waiting_for = None
+                return [
+                    "↩️ Saliste del modo *marcar pedido*.",
+                    "",
+                    "👷 *Menú Repartidor*",
+                    "1️⃣ Ver mi tanda actual",
+                    "2️⃣ Marcar pedido como entregado",
+                    "3️⃣ Estado general",
+                ]
+
+            # Intentar interpretar como número de pedido
+            try:
+                indice = int(lower)
+            except ValueError:
+                return [
+                    "Necesito un número de pedido válido (1, 2, 3...).",
+                    "O mandá *0* para volver al menú.",
+                ]
+
+            if indice < 1 or indice > len(tanda.pedidos):
+                return [
+                    f"El número debe estar entre 1 y {len(tanda.pedidos)}.",
+                    "Probá de nuevo o mandá *0* para volver al menú.",
+                ]
+
+            # Marcamos como entregado el pedido elegido (1-based -> 0-based)
+            pedido = tanda.pedidos.pop(indice - 1)
+            repartidor.pedidos_entregados += 1
+
+            msg = [
+                f"✅ Pedido {pedido.id} marcado como entregado.",
+                f"Cliente: {pedido.wa_id_cliente}",
+                f"Importe: ${pedido.total}",
+            ]
+
+            if tanda.pedidos:
+                msg.append("")
+                msg.append("📋 Pedidos restantes en esta tanda:")
+                for i, p in enumerate(tanda.pedidos, start=1):
+                    msg.append(f"{i}. Pedido {p.id} - ${p.total} - {p.wa_id_cliente}")
+                msg.append("")
+                msg.append(
+                    "Escribí otro número para marcar otro pedido, o *0* para volver al menú."
+                )
+                # Seguimos en modo marcar
+                session.waiting_for = WAITING_REPARTIDOR_MARCAR
+            else:
+                # La tanda quedó vacía → repartidor vuelve a estar disponible
+                repartidor.tanda_actual = None
+                repartidor.estado = "disponible"
+                msg.append("")
+                msg.append("🎉 Entregaste todos los pedidos de esta tanda.")
+                msg.append("Ahora volvés a estar *disponible*.")
+
+                # Intentamos asignarle una nueva tanda si hay en cola
+                gestor_repartos._asignar_tanda_a_repartidor_disponible(
+                    repartidor_especifico=repartidor
+                )
+
+                # Volvemos al menú normal
+                session.waiting_for = None
+                msg.append("")
+                msg.append("👷 *Menú Repartidor*")
+                msg.append("1️⃣ Ver mi tanda actual")
+                msg.append("2️⃣ Marcar pedido como entregado")
+                msg.append("3️⃣ Estado general")
+
+            return msg
+
+        # ============== COMANDOS GLOBALES DEL REPARTIDOR ==============
         if lower in ("/start", "hola", "menu"):
+            session.waiting_for = None
             return [
                 "👷 *Modo Repartidor activo*",
                 "",
@@ -974,6 +1083,7 @@ class ChatBot:
                 "Respondé con una opción.",
             ]
 
+        # ============== OPCIÓN 1: VER TANDA ACTUAL ===================
         if lower == "1":
             tanda = repartidor.tanda_actual
             if not tanda:
@@ -992,43 +1102,58 @@ class ChatBot:
                     f"{i}. Pedido {pedido.id} - ${pedido.total} - {pedido.wa_id_cliente}"
                 )
 
+            lineas.append("")
+            lineas.append(
+                "Para marcar un pedido como entregado, elegí la opción *2* del menú."
+            )
+
+            # No estamos en modo marcar todavía
+            session.waiting_for = None
             return lineas
 
+        # ============== OPCIÓN 2: ENTRAR EN MODO MARCAR ==============
         if lower == "2":
             tanda = repartidor.tanda_actual
             if not tanda or not tanda.pedidos:
-                return ["No hay pedidos para marcar como entregados."]
+                session.waiting_for = None
+                return [
+                    "No hay pedidos para marcar como entregados.",
+                    "Cuando tengas una tanda asignada, volvé a probar.",
+                ]
 
-            pedido = tanda.pedidos.pop(0)
-            repartidor.pedidos_entregados += 1
-
-            msg = [
-                f"✅ Pedido {pedido.id} marcado como entregado.",
-                f"Cliente: {pedido.wa_id_cliente}",
-                f"Importe: ${pedido.total}",
+            lineas = [
+                "✅ Estás en el *modo marcar pedido*.",
+                "",
+                "📋 Pedidos en tu tanda actual:",
             ]
 
-            if tanda.pedidos:
-                msg.append("")
-                msg.append(
-                    f"Quedan {len(tanda.pedidos)} pedidos pendientes en esta tanda."
+            for i, pedido in enumerate(tanda.pedidos, start=1):
+                lineas.append(
+                    f"{i}. Pedido {pedido.id} - ${pedido.total} - {pedido.wa_id_cliente}"
                 )
-            else:
-                repartidor.tanda_actual = None
-                repartidor.estado = "disponible"
-                msg.append("")
-                msg.append("🎉 Tanda finalizada. Estás disponible nuevamente.")
 
-            return msg
+            lineas.append("")
+            lineas.append(
+                "Escribí el *número* del pedido que querés marcar como entregado."
+            )
+            lineas.append("O mandá *0* para cancelar y volver al menú.")
 
+            # Entramos en modo marcar
+            session.waiting_for = WAITING_REPARTIDOR_MARCAR
+            return lineas
+
+        # ============== OPCIÓN 3: ESTADO GENERAL =====================
         if lower == "3":
             return [
                 f"🚚 Estado: {repartidor.estado}",
                 f"Pedidos entregados: {repartidor.pedidos_entregados}",
             ]
 
+        # ============== FALLBACK MODO REPARTIDOR =====================
         return [
-            "👷 Menú repartidor",
+            "No entendí esa opción en modo repartidor 😅",
+            "",
+            "👷 *Menú Repartidor*",
             "1️⃣ Ver mi tanda actual",
             "2️⃣ Marcar pedido como entregado",
             "3️⃣ Estado general",
