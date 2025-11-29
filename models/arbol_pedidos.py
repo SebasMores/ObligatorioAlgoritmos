@@ -9,7 +9,7 @@ from .pedidos import Pedido
 class NodoPedido:
     """
     Nodo de un árbol binario de búsqueda para pedidos.
-    Se ordena por la distancia (o el criterio que definas).
+    Usamos 'distancia' como clave numérica de orden.
     """
 
     pedido: Pedido
@@ -23,10 +23,6 @@ def insertar_nodo(
     pedido: Pedido,
     distancia: float,
 ) -> NodoPedido:
-    """
-    Inserta un pedido en el BST según la distancia.
-    Si la raíz es None, crea el primer nodo.
-    """
     if raiz is None:
         return NodoPedido(pedido=pedido, distancia=distancia)
 
@@ -41,14 +37,12 @@ def insertar_nodo(
 def construir_bst_desde_pedidos(pedidos: List[Pedido]) -> Optional[NodoPedido]:
     """
     Construye un BST a partir de una lista de pedidos.
-    IMPORTANTE: ajustá cómo sacás la distancia de cada pedido.
+    Usamos pedido.total como clave numérica para ordenar.
     """
     raiz: Optional[NodoPedido] = None
 
     for pedido in pedidos:
-
-        distancia = pedido.distancia
-
+        distancia = float(pedido.total)
         raiz = insertar_nodo(raiz, pedido, distancia)
 
     return raiz
@@ -56,7 +50,8 @@ def construir_bst_desde_pedidos(pedidos: List[Pedido]) -> Optional[NodoPedido]:
 
 def recorrer_in_order(raiz: Optional[NodoPedido]) -> List[Pedido]:
     """
-    Devuelve los pedidos ordenados por distancia (in-order).
+    Devuelve los pedidos ordenados según la 'distancia' del nodo
+    (en este caso, el total del pedido).
     """
     resultado: List[Pedido] = []
 
