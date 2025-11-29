@@ -38,14 +38,15 @@ class MessageAggregator:
         buf["texts"].append(text)
 
         # Si ya había un timer corriendo, lo cancelamos
-        task: asyncio.Task | None = buf.get("task")
-        if task is not None and not task.done():
-            task.cancel()
+        existing_task = buf.get("task")
+        if existing_task is not None and not existing_task.done():
+            existing_task.cancel()
 
         # Lanzamos un nuevo timer de 3 segundos
-        buf["task"] = asyncio.create_task(
+        new_task = asyncio.create_task(
             self._wait_and_process(user_id, process_callback)
         )
+        buf["task"] = new_task
 
     async def _wait_and_process(self, user_id: str, process_callback):
         try:
