@@ -23,7 +23,7 @@ WAITING_PEDIDO_CONFIRMAR = "PEDIDO_CONFIRMAR"
 WAITING_PEDIDO_UBICACION = "PEDIDO_UBICACION"
 WAITING_REPARTIDOR_MARCAR = "REPARTIDOR_MARCAR"
 
-# Lugares de referencia en Salto para usar tanto en la opción 1 como en la 2 (pedido)
+# Lugares de referencia en Salto
 LUGARES_SALTO: Dict[str, tuple[float, float]] = {
     "centro": (-31.3833, -57.9667),
     "plaza artigas": (-31.3825, -57.9658),
@@ -116,7 +116,7 @@ class ChatBot:
             return self._handle_ayuda(session)
 
         if lower == "/lista_demo":
-            # Ejemplo simple copiando la idea del JSON del profe
+
             return [
                 {
                     "kind": "interactive_list",
@@ -168,14 +168,12 @@ class ChatBot:
                 ]
             return self._formatear_resumen_carrito(carrito)
 
-        # Si no está en ningún flujo, redirigimos a /ayuda
         if session.state == STATE_IDLE:
             return [
                 "No entendí el mensaje 🤔",
                 "Mandá */ayuda* para ver las opciones disponibles.",
             ]
 
-        # Enrutado según estado actual
         if session.state == STATE_MAIN_MENU:
             return self._handle_main_menu(session, lower)
 
@@ -185,7 +183,6 @@ class ChatBot:
         if session.state == STATE_PEDIDO:
             return self._handle_pedido(session, raw, lower)
 
-        # Fallback
         session.state = STATE_IDLE
         session.waiting_for = WAITING_NONE
         session.data.clear()
@@ -195,7 +192,6 @@ class ChatBot:
             "Mandá /ayuda para empezar de nuevo.",
         ]
 
-    # --------- Handlers internos ---------
     def _handle_ayuda(self, session: ChatSession) -> List[str]:
         """
         Muestra el menú principal y prepara el estado MAIN_MENU.
@@ -209,7 +205,6 @@ class ChatBot:
             "",
             "1️⃣ Calcular ruta de delivery (Dijkstra / A*).",
             "2️⃣ Realizar pedido (listar productos).",
-            "3️⃣ [Opción 3 del obligatorio].",
             "",
             "Respondé con el *número* de la opción (por ejemplo: 1).",
         ]
@@ -229,30 +224,22 @@ class ChatBot:
             ]
 
         if lower == "2":
-            # Iniciar flujo de pedido (versión simplificada)
+
             session.state = STATE_PEDIDO
             session.waiting_for = WAITING_PEDIDO_PRODUCTO
             session.data.clear()
 
-            # Página inicial de productos (0)
             session.data["pedido_pagina"] = 0
             session.data["pedido_filtro"] = "Todos"
             session.data["pedido_orden"] = "asc"
 
             return self._mostrar_lista_productos(session)
 
-        if lower == "3":
-            return [
-                "La *Opción 3* todavía no está implementada.",
-                "Por ahora, solo están funcionando las opciones 1 y 2.",
-            ]
-
         return [
             "No entendí la opción seleccionada 😅",
-            "Respondé *1, 2 o 3*, o mandá /ayuda para ver el menú de nuevo.",
+            "Respondé *1* o *2*, o mandá /ayuda para ver el menú de opciones.",
         ]
 
-    # ================= OPCIÓN 1: RUTA =================
     def _handle_opcion_ruta(
         self, session: ChatSession, raw: str, lower: str
     ) -> List[str]:
@@ -261,7 +248,6 @@ class ChatBot:
         Usa el diccionario global LUGARES_SALTO.
         """
 
-        # ---------- Paso 1: ORIGEN ----------
         if session.waiting_for == WAITING_RUTA_ORIGEN:
             origen_nombre = lower.strip()
 
@@ -279,7 +265,6 @@ class ChatBot:
                 "Ahora escribí el *destino* (mismos lugares posibles).",
             ]
 
-        # ---------- Paso 2: DESTINO ----------
         if session.waiting_for == WAITING_RUTA_DESTINO:
             destino_nombre = lower.strip()
             origen_nombre = session.data.get("origen_nombre")
@@ -309,7 +294,6 @@ class ChatBot:
                 "Respondé *1* o *2*.",
             ]
 
-        # ---------- Paso 3: ELECCIÓN DE ALGORITMO ----------
         if session.waiting_for == WAITING_RUTA_ALGORITMO:
             origen_nombre = session.data.get("origen_nombre")
             destino_nombre = session.data.get("destino_nombre")
@@ -356,7 +340,6 @@ class ChatBot:
                     "Avisale al profe que revise las dependencias (osmnx, networkx, etc.).",
                 ]
 
-            # 👇 AHORA usamos LUGARES_SALTO en lugar de 'lugares'
             orig_coord = LUGARES_SALTO[origen_nombre]
             dest_coord = LUGARES_SALTO[destino_nombre]
 
@@ -412,7 +395,6 @@ class ChatBot:
 
             return mensaje
 
-        # Fallback si se pierde el estado
         session.state = STATE_IDLE
         session.waiting_for = WAITING_NONE
         session.data.clear()
@@ -422,9 +404,9 @@ class ChatBot:
             "Mandá /ayuda y elegí la opción 1 para reintentar.",
         ]
 
-    # ================= OPCIÓN 2: PEDIDO (VERSIÓN SIMPLE) =================
+    # OPCIÓN 2: PEDIDO (VERSIÓN SIMPLE)
 
-    # ================= OPCIÓN 2: PEDIDO =================
+    # OPCIÓN 2: PEDIDO
 
     def _formatear_resumen_carrito(self, carrito):
         """
@@ -455,11 +437,9 @@ class ChatBot:
         orden = session.data.get("pedido_orden", "asc")
         productos = PRODUCTOS
 
-        # Filtrar por categoría
         if filtro and filtro != "Todos":
             productos = [p for p in productos if p.categoria == filtro]
 
-        # Ordenar por precio
         reverse = orden == "desc"
         productos = sorted(productos, key=lambda p: p.precio, reverse=reverse)
 
@@ -476,7 +456,6 @@ class ChatBot:
         pagina = session.data.get("pedido_pagina", 0)
         PAGE_SIZE = 5
 
-        # Productos con filtro + orden aplicados
         productos = self._get_productos_filtrados(session)
         total_items = len(productos)
         total_paginas = max(1, math.ceil(total_items / PAGE_SIZE))
@@ -493,7 +472,7 @@ class ChatBot:
 
         rows_productos = []
         for p in productos_pagina:
-            # Título corto: solo el nombre, máx 24 caracteres
+
             title_text = p.nombre
             if len(title_text) > 24:
                 title_text = title_text[:23] + "…"
@@ -508,7 +487,6 @@ class ChatBot:
 
         rows_opciones = []
 
-        # Opción de ver más (si hay más páginas)
         if pagina < total_paginas - 1:
             rows_opciones.append(
                 {
@@ -518,7 +496,6 @@ class ChatBot:
                 }
             )
 
-        # Opción de filtrar por categoría
         rows_opciones.append(
             {
                 "id": "opt_filtrar",
@@ -527,7 +504,6 @@ class ChatBot:
             }
         )
 
-        # Opción de ordenar por precio (toggle asc/desc)
         orden_actual = session.data.get("pedido_orden", "asc")
         desc_opcion = "Descendente" if orden_actual == "asc" else "Ascendente"
 
@@ -539,7 +515,6 @@ class ChatBot:
             }
         )
 
-        # Finalizar pedido (ver resumen + confirmar)
         rows_opciones.append(
             {
                 "id": "opt_finalizar",
@@ -548,7 +523,6 @@ class ChatBot:
             }
         )
 
-        # 🔙 NUEVO: Volver al menú principal
         rows_opciones.append(
             {
                 "id": "opt_volver_menu",
@@ -624,23 +598,20 @@ class ChatBot:
         - WAITING_PEDIDO_CONFIRMAR: preguntar si sigue agregando o confirma
         """
 
-        # ================== LISTA DE PRODUCTOS / OPCIONES ==================
+        # LISTA DE PRODUCTOS / OPCIONES
         if session.waiting_for == WAITING_PEDIDO_PRODUCTO:
-            # Ver más productos
+
             if lower == "opt_ver_mas":
                 session.data["pedido_pagina"] = session.data.get("pedido_pagina", 0) + 1
                 return self._mostrar_lista_productos(session)
 
-            # Finalizar pedido → ver resumen
             if lower == "opt_finalizar":
                 return self._mostrar_resumen_carrito(session)
 
-            # Ir a elegir categoría (filtro)
             if lower == "opt_filtrar":
                 session.waiting_for = WAITING_PEDIDO_FILTRO
                 return self._mostrar_lista_categorias(session)
 
-            # Ordenar por precio (toggle asc/desc)
             if lower == "opt_ordenar":
                 orden_actual = session.data.get("pedido_orden", "asc")
                 session.data["pedido_orden"] = (
@@ -650,7 +621,7 @@ class ChatBot:
                 return self._mostrar_lista_productos(session)
 
             if lower == "opt_volver_menu":
-                # Cancelamos el flujo de pedido y volvemos al menú
+
                 session.state = STATE_MAIN_MENU
                 session.waiting_for = WAITING_NONE
                 session.data.clear()
@@ -658,7 +629,6 @@ class ChatBot:
                     "↩️ Volviste al *menú principal*.",
                 ] + self._handle_ayuda(session)
 
-            # Asumimos que cualquier otra cosa es ID de producto
             producto = get_producto_por_id(raw) or get_producto_por_id(lower)
             if producto is None:
                 return [
@@ -666,7 +636,6 @@ class ChatBot:
                     "Usá la lista interactiva para elegir un producto o una opción.",
                 ] + self._mostrar_lista_productos(session)
 
-            # Guardamos el producto elegido en la sesión y pedimos cantidad
             session.data["producto_actual_id"] = producto.id
             session.waiting_for = WAITING_PEDIDO_CANTIDAD
 
@@ -675,20 +644,19 @@ class ChatBot:
                 "¿Cuántas unidades querés? (ingresá un número entero, por ejemplo: 1, 2, 3)",
             ]
 
-            # ================== PEDIR CANTIDAD ==================
+            # PEDIR CANTIDAD
         if session.waiting_for == WAITING_PEDIDO_CANTIDAD:
             prod_id = session.data.get("producto_actual_id")
             producto = get_producto_por_id(prod_id) if prod_id else None
 
             if producto is None:
-                # Algo raro: volvemos al listado de productos
+
                 session.waiting_for = WAITING_PEDIDO_PRODUCTO
                 return [
                     "Se perdió el producto seleccionado 😅",
                     "Volvemos al listado de productos.",
                 ] + self._mostrar_lista_productos(session)
 
-            # Intentar convertir la cantidad a entero
             try:
                 cantidad = int(raw)
             except ValueError:
@@ -703,7 +671,6 @@ class ChatBot:
                     "Por ejemplo: 1, 2, 3...",
                 ]
 
-            # Agregar al carrito
             carrito = session.data.get("carrito", [])
             carrito.append(
                 {
@@ -714,7 +681,7 @@ class ChatBot:
                 }
             )
             session.data["carrito"] = carrito
-            # Ya no necesitamos el producto_actual
+
             session.data.pop("producto_actual_id", None)
 
             subtotal = cantidad * producto.precio
@@ -732,7 +699,7 @@ class ChatBot:
                 "3️⃣ Ver carrito / editar",
             ]
 
-            # ================== CONFIRMAR O SEGUIR AGREGANDO ==================
+            # CONFIRMAR O SEGUIR AGREGANDO
         if session.waiting_for == WAITING_PEDIDO_CONFIRMAR:
             carrito = session.data.get("carrito", [])
 
@@ -746,14 +713,13 @@ class ChatBot:
                 # 2️⃣ Confirmar pedido
             if lower == "2":
                 if not carrito:
-                    # Por las dudas, si no hay nada en el carrito
+
                     session.waiting_for = WAITING_PEDIDO_PRODUCTO
                     return [
                         "Todavía no tenés productos en el carrito 😅",
                         "Elegí alguno de la lista.",
                     ] + self._mostrar_lista_productos(session)
 
-                # Antes de confirmar definitivamente, pedimos la ubicación aproximada
                 session.waiting_for = WAITING_PEDIDO_UBICACION
 
                 instrucciones_ubicacion = [
@@ -791,7 +757,6 @@ class ChatBot:
                 )
                 return lineas
 
-            # Eliminar último ítem del carrito
             if lower.startswith("eliminar"):
                 if carrito:
                     carrito.pop()
@@ -814,7 +779,6 @@ class ChatBot:
                         "Respondé *1* para agregar un producto.",
                     ]
 
-            # Vaciar carrito
             if lower.startswith("vaciar"):
                 if carrito:
                     session.data["carrito"] = []
@@ -828,17 +792,16 @@ class ChatBot:
                         "Respondé *1* para agregar productos.",
                     ]
 
-            # Si no respondió nada de lo esperado
             return [
                 "No entendí esa opción 😅",
                 "Respondé *1* para agregar otro producto, *2* para confirmar el pedido o *3* para ver/editar el carrito.",
             ]
 
-            # ================== UBICACIÓN DEL CLIENTE ==================
+            # UBICACIÓN DEL CLIENTE
         if session.waiting_for == WAITING_PEDIDO_UBICACION:
             carrito = session.data.get("carrito", [])
             if not carrito:
-                # Si algo raro pasó y se perdió el carrito
+
                 session.state = STATE_MAIN_MENU
                 session.waiting_for = WAITING_NONE
                 session.data.clear()
@@ -850,7 +813,7 @@ class ChatBot:
             lugar_nombre = lower.strip()
 
             if lugar_nombre not in LUGARES_SALTO:
-                # Ubicación no reconocida
+
                 return [
                     "⚠️ No reconocí ese lugar.",
                     "Escribí uno de estos lugares (todo en minúsculas):",
@@ -865,7 +828,6 @@ class ChatBot:
             lat, lon = LUGARES_SALTO[lugar_nombre]
             wa_id = session.data.get("wa_id", "")
 
-            # Creamos y registramos el Pedido en el Gestor de Repartos
             pedido = gestor_repartos.crear_y_registrar_pedido_desde_carrito(
                 wa_id_cliente=wa_id,
                 carrito=carrito,
@@ -873,7 +835,6 @@ class ChatBot:
                 lon=lon,
             )
 
-            # Armamos mensaje final al cliente
             lineas = [
                 f"📍 Ubicación registrada: *{lugar_nombre}*.",
                 f"🔐 Código de entrega: *{pedido.codigo_confirmacion}* "
@@ -883,16 +844,15 @@ class ChatBot:
                 "Si querés hacer otro pedido, mandá */ayuda*.",
             ]
 
-            # Cerramos flujo de pedido
             session.state = STATE_IDLE
             session.waiting_for = WAITING_NONE
             session.data.clear()
 
             return lineas
 
-        # ================== LISTA DE CATEGORÍAS (FILTRO) ==================
+        # LISTA DE CATEGORÍAS (FILTRO)
         if session.waiting_for == WAITING_PEDIDO_FILTRO:
-            # Esperamos ids tipo: cat_pizzas, cat_bebidas, cat_todos, etc.
+
             if lower.startswith("cat_"):
                 categorias = obtener_categorias()
                 seleccion = None
@@ -903,27 +863,25 @@ class ChatBot:
                         break
 
                 if seleccion is None:
-                    # Algo raro: volvemos al listado sin cambiar nada
+
                     session.waiting_for = WAITING_PEDIDO_PRODUCTO
                     return [
                         "No reconocí esa categoría 😅",
                         "Volvemos al listado de productos.",
                     ] + self._mostrar_lista_productos(session)
 
-                # Aplicar filtro
                 session.data["pedido_filtro"] = seleccion
                 session.data["pedido_pagina"] = 0
                 session.waiting_for = WAITING_PEDIDO_PRODUCTO
                 return self._mostrar_lista_productos(session)
 
-            # Si no eligió una categoría válida
             session.waiting_for = WAITING_PEDIDO_PRODUCTO
             return [
                 "No reconocí esa categoría 😅",
                 "Volvemos al listado de productos.",
             ] + self._mostrar_lista_productos(session)
 
-            # ================== FALLBACK ==================
+            # FALLBACK
         session.state = STATE_MAIN_MENU
         session.waiting_for = WAITING_NONE
         session.data.clear()
@@ -971,110 +929,175 @@ class ChatBot:
         Flujo del modo repartidor.
 
         Menú:
-          1 -> ver tanda actual.
-          2 -> entrar en modo 'marcar pedido', donde elige 1, 2, 3...
-          3 -> ver estado general.
+          1 -> Ver tanda actual
+          2 -> Marcar pedido como entregado
+          3 -> Ver estado general
         """
-
-        from gestor_repartos import gestor_repartos  # para reasignar tandas si termina
 
         lower = (text or "").strip().lower()
 
-        # ============== MODO SELECCIONAR PEDIDO A MARCAR ==============
+        #
         if session.waiting_for == WAITING_REPARTIDOR_MARCAR and lower not in (
             "/start",
             "hola",
             "menu",
         ):
             tanda = repartidor.tanda_actual
-            if not tanda or not tanda.pedidos:
-                # No hay nada para marcar, volvemos al menú
+            if not tanda:
                 session.waiting_for = None
                 return [
-                    "📭 Ya no quedan pedidos en tu tanda actual.",
+                    "📭 Ya no tenés una tanda activa.",
                     "",
-                    "👷 *Menú Repartidor*",
+                    "👷 *Menú repartidor*",
                     "1️⃣ Ver mi tanda actual",
                     "2️⃣ Marcar pedido como entregado",
                     "3️⃣ Estado general",
                 ]
 
-            # Permitir cancelar
+            pedidos_pendientes = [p for p in tanda.pedidos if p.estado != "entregado"]
+
+            if not pedidos_pendientes:
+                session.waiting_for = None
+                return [
+                    "📭 No quedan pedidos pendientes en tu tanda.",
+                    "",
+                    "👷 *Menú repartidor*",
+                    "1️⃣ Ver mi tanda actual",
+                    "2️⃣ Marcar pedido como entregado",
+                    "3️⃣ Estado general",
+                ]
+
             if lower in ("0", "salir", "cancelar"):
                 session.waiting_for = None
                 return [
                     "↩️ Saliste del modo *marcar pedido*.",
                     "",
-                    "👷 *Menú Repartidor*",
+                    "👷 *Menú repartidor*",
                     "1️⃣ Ver mi tanda actual",
                     "2️⃣ Marcar pedido como entregado",
                     "3️⃣ Estado general",
                 ]
 
-            # Intentar interpretar como número de pedido
             try:
                 indice = int(lower)
             except ValueError:
                 return [
-                    "Necesito un número de pedido válido (1, 2, 3...).",
+                    "Necesito un *número* válido (1, 2, 3...).",
                     "O mandá *0* para volver al menú.",
                 ]
 
-            if indice < 1 or indice > len(tanda.pedidos):
+            if indice < 1 or indice > len(pedidos_pendientes):
                 return [
-                    f"El número debe estar entre 1 y {len(tanda.pedidos)}.",
+                    f"El número debe estar entre 1 y {len(pedidos_pendientes)}.",
                     "Probá de nuevo o mandá *0* para volver al menú.",
                 ]
 
-            # Marcamos como entregado el pedido elegido (1-based -> 0-based)
-            pedido = tanda.pedidos.pop(indice - 1)
-            repartidor.pedidos_entregados += 1
+            pedido = pedidos_pendientes[indice - 1]
+
+            ok = gestor_repartos.marcar_pedido_entregado(
+                wa_id_repartidor=repartidor.wa_id,
+                pedido_id=pedido.id,
+            )
+
+            if not ok:
+                session.waiting_for = None
+                return [
+                    "❌ No se pudo marcar ese pedido como entregado.",
+                    "Probá de nuevo más tarde.",
+                    "",
+                    "👷 *Menú repartidor*",
+                    "1️⃣ Ver mi tanda actual",
+                    "2️⃣ Marcar pedido como entregado",
+                    "3️⃣ Estado general",
+                ]
 
             msg = [
-                f"✅ Pedido {pedido.id} marcado como entregado.",
+                f"✅ Pedido {pedido.id} marcado como *entregado*.",
                 f"Cliente: {pedido.wa_id_cliente}",
                 f"Importe: ${pedido.total}",
             ]
 
-            if tanda.pedidos:
-                msg.append("")
-                msg.append("📋 Pedidos restantes en esta tanda:")
-                for i, p in enumerate(tanda.pedidos, start=1):
-                    msg.append(f"{i}. Pedido {p.id} - ${p.total} - {p.wa_id_cliente}")
-                msg.append("")
-                msg.append(
-                    "Escribí otro número para marcar otro pedido, o *0* para volver al menú."
-                )
-                # Seguimos en modo marcar
-                session.waiting_for = WAITING_REPARTIDOR_MARCAR
-            else:
-                # La tanda quedó vacía → repartidor vuelve a estar disponible
-                repartidor.tanda_actual = None
-                repartidor.estado = "disponible"
-                msg.append("")
-                msg.append("🎉 Entregaste todos los pedidos de esta tanda.")
-                msg.append("Ahora volvés a estar *disponible*.")
+            tanda_anterior_id = tanda.id
+            tanda_actual = repartidor.tanda_actual
 
-                # Intentamos asignarle una nueva tanda si hay en cola
-                gestor_repartos._asignar_tanda_a_repartidor_disponible(
-                    repartidor_especifico=repartidor
-                )
-
-                # Volvemos al menú normal
+            if tanda_actual is None:
                 session.waiting_for = None
-                msg.append("")
-                msg.append("👷 *Menú Repartidor*")
-                msg.append("1️⃣ Ver mi tanda actual")
-                msg.append("2️⃣ Marcar pedido como entregado")
-                msg.append("3️⃣ Estado general")
+                msg += [
+                    "",
+                    f"🎉 Entregaste todos los pedidos de la tanda {tanda_anterior_id}.",
+                    "Por ahora no hay más tandas, quedaste *disponible*.",
+                    "",
+                    "👷 *Menú repartidor*",
+                    "1️⃣ Ver mi tanda actual",
+                    "2️⃣ Marcar pedido como entregado",
+                    "3️⃣ Estado general",
+                ]
+                return msg
 
+            if tanda_actual.id != tanda_anterior_id:
+                pedidos_pendientes_nueva = [
+                    p for p in tanda_actual.pedidos if p.estado != "entregado"
+                ]
+
+                msg += [
+                    "",
+                    f"🎉 Terminaste la tanda {tanda_anterior_id}.",
+                    f"📦 Se te asignó una nueva tanda *{tanda_actual.id}* "
+                    f"con {len(pedidos_pendientes_nueva)} pedidos.",
+                    "",
+                    "📋 Pedidos de tu nueva tanda:",
+                ]
+
+                for i, p in enumerate(pedidos_pendientes_nueva, start=1):
+                    msg.append(f"{i}. Pedido {p.id} - ${p.total} - {p.wa_id_cliente}")
+
+                msg += [
+                    "",
+                    "Escribí el número de un pedido para marcarlo como entregado,",
+                    "o mandá *0* para volver al menú.",
+                ]
+                session.waiting_for = WAITING_REPARTIDOR_MARCAR
+                return msg
+
+            pedidos_pendientes_restantes = [
+                p for p in tanda_actual.pedidos if p.estado != "entregado"
+            ]
+
+            if not pedidos_pendientes_restantes:
+                session.waiting_for = None
+                msg += [
+                    "",
+                    "🎉 Entregaste todos los pedidos de esta tanda.",
+                    "Si hay otra tanda en espera, se te asignará automáticamente.",
+                    "",
+                    "👷 *Menú repartidor*",
+                    "1️⃣ Ver mi tanda actual",
+                    "2️⃣ Marcar pedido como entregado",
+                    "3️⃣ Estado general",
+                ]
+                return msg
+
+            msg += [
+                "",
+                "📋 Pedidos pendientes en esta tanda:",
+            ]
+
+            for i, p in enumerate(pedidos_pendientes_restantes, start=1):
+                msg.append(f"{i}. Pedido {p.id} - ${p.total} - {p.wa_id_cliente}")
+
+            msg += [
+                "",
+                "Escribí otro número para marcar otro pedido, o *0* para volver al menú.",
+            ]
+
+            session.waiting_for = WAITING_REPARTIDOR_MARCAR
             return msg
 
-        # ============== COMANDOS GLOBALES DEL REPARTIDOR ==============
+        # COMANDOS GLOBALES DEL REPARTIDOR
         if lower in ("/start", "hola", "menu"):
             session.waiting_for = None
             return [
-                "👷 *Modo Repartidor activo*",
+                "👷 *Modo repartidor*",
                 "",
                 "1️⃣ Ver mi tanda actual",
                 "2️⃣ Marcar pedido como entregado",
@@ -1083,77 +1106,90 @@ class ChatBot:
                 "Respondé con una opción.",
             ]
 
-        # ============== OPCIÓN 1: VER TANDA ACTUAL ===================
+        # OPCIÓN 1: VER TANDA ACTUAL
         if lower == "1":
             tanda = repartidor.tanda_actual
             if not tanda:
                 return ["📭 No tenés ninguna tanda asignada por ahora."]
 
+            pedidos_pendientes = [p for p in tanda.pedidos if p.estado != "entregado"]
+            entregados = [p for p in tanda.pedidos if p.estado == "entregado"]
+
             lineas = [
                 f"📦 Tanda asignada: {tanda.id}",
                 f"Zona: {tanda.zona}",
-                f"Pedidos en tanda: {len(tanda.pedidos)}",
+                f"Total pedidos: {len(tanda.pedidos)}",
+                f"Pendientes: {len(pedidos_pendientes)} · Entregados: {len(entregados)}",
                 "",
-                "📋 Pedidos:",
+                "📋 Pedidos pendientes:",
             ]
 
-            for i, pedido in enumerate(tanda.pedidos, start=1):
-                lineas.append(
-                    f"{i}. Pedido {pedido.id} - ${pedido.total} - {pedido.wa_id_cliente}"
-                )
+            if pedidos_pendientes:
+                for i, pedido in enumerate(pedidos_pendientes, start=1):
+                    lineas.append(
+                        f"{i}. Pedido {pedido.id} - ${pedido.total} - {pedido.wa_id_cliente}"
+                    )
+            else:
+                lineas.append("No hay pedidos pendientes en esta tanda.")
 
-            lineas.append("")
-            lineas.append(
-                "Para marcar un pedido como entregado, elegí la opción *2* del menú."
-            )
+            lineas += [
+                "",
+                "Para marcar un pedido como entregado, elegí la opción *2* del menú.",
+            ]
 
-            # No estamos en modo marcar todavía
             session.waiting_for = None
             return lineas
 
-        # ============== OPCIÓN 2: ENTRAR EN MODO MARCAR ==============
+        # OPCIÓN 2: ENTRAR EN MODO MARCAR
         if lower == "2":
             tanda = repartidor.tanda_actual
-            if not tanda or not tanda.pedidos:
+            if not tanda:
                 session.waiting_for = None
                 return [
-                    "No hay pedidos para marcar como entregados.",
-                    "Cuando tengas una tanda asignada, volvé a probar.",
+                    "📭 No tenés ninguna tanda asignada por ahora.",
+                    "Cuando el sistema te asigne una, podés volver a esta opción.",
+                ]
+
+            pedidos_pendientes = [p for p in tanda.pedidos if p.estado != "entregado"]
+            if not pedidos_pendientes:
+                session.waiting_for = None
+                return [
+                    "No hay pedidos pendientes para marcar como entregados.",
+                    "Cuando tengas pedidos pendientes en tu tanda, volvé a probar.",
                 ]
 
             lineas = [
                 "✅ Estás en el *modo marcar pedido*.",
                 "",
-                "📋 Pedidos en tu tanda actual:",
+                "📋 Pedidos pendientes:",
             ]
 
-            for i, pedido in enumerate(tanda.pedidos, start=1):
+            for i, pedido in enumerate(pedidos_pendientes, start=1):
                 lineas.append(
                     f"{i}. Pedido {pedido.id} - ${pedido.total} - {pedido.wa_id_cliente}"
                 )
 
-            lineas.append("")
-            lineas.append(
-                "Escribí el *número* del pedido que querés marcar como entregado."
-            )
-            lineas.append("O mandá *0* para cancelar y volver al menú.")
+            lineas += [
+                "",
+                "Escribí el *número* del pedido que querés marcar como entregado.",
+                "O mandá *0* para cancelar y volver al menú.",
+            ]
 
-            # Entramos en modo marcar
             session.waiting_for = WAITING_REPARTIDOR_MARCAR
             return lineas
 
-        # ============== OPCIÓN 3: ESTADO GENERAL =====================
+        # OPCIÓN 3: ESTADO GENERAL
         if lower == "3":
             return [
                 f"🚚 Estado: {repartidor.estado}",
                 f"Pedidos entregados: {repartidor.pedidos_entregados}",
             ]
 
-        # ============== FALLBACK MODO REPARTIDOR =====================
+        # FALLBACK MODO REPARTIDOR
         return [
             "No entendí esa opción en modo repartidor 😅",
             "",
-            "👷 *Menú Repartidor*",
+            "👷 *Menú repartidor*",
             "1️⃣ Ver mi tanda actual",
             "2️⃣ Marcar pedido como entregado",
             "3️⃣ Estado general",

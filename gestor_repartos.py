@@ -1,5 +1,3 @@
-# gestor_repartos.py
-
 from __future__ import annotations
 
 from collections import deque
@@ -16,7 +14,7 @@ from models.zona import Zona
 from models.tanda_pedidos import TandaPedidos
 from models.repartidor import Repartidor
 
-# Coordenadas del restaurante (las podés ajustar si querés)
+
 RESTAURANTE_LAT = -31.3833
 RESTAURANTE_LON = -57.9667
 
@@ -34,11 +32,10 @@ class GestorRepartos:
     """
 
     def __init__(self) -> None:
-        # ----------------- PEDIDOS -----------------
-        # Todos los pedidos por id
+        # PEDIDOS
+
         self.pedidos: Dict[str, Pedido] = {}
 
-        # Una cola de pedidos por zona
         self.cola_por_zona: Dict[Zona, Deque[Pedido]] = {
             Zona.NO: deque(),
             Zona.NE: deque(),
@@ -46,29 +43,27 @@ class GestorRepartos:
             Zona.SE: deque(),
         }
 
-        # ----------------- TANDAS ------------------
-        # Tandas creadas por id
+        # TANDAS
+
         self.tandas: Dict[str, TandaPedidos] = {}
 
-        # Cola de tandas aún sin repartidor asignado
         self.cola_tandas_sin_repartidor: Deque[TandaPedidos] = deque()
 
-        # ----------------- REPARTIDORES -----------
-        # Repartidores por id interno
+        # REPARTIDORES
+
         self.repartidores_por_id: Dict[str, Repartidor] = {}
-        # Repartidores por número de WhatsApp (wa_id)
+
         self.repartidores_por_wa: Dict[str, Repartidor] = {}
 
-    # ==========================================================
     #  CÁLCULO DE ZONA
-    # ==========================================================
+
     def calcular_zona(self, lat: float, lon: float) -> Zona:
         """
         Clasifica un punto (lat, lon) en una de las 4 zonas.
         Latitudes y longitudes negativas (Uruguay).
         """
-        es_norte = lat > RESTAURANTE_LAT  # más al norte = menos negativo
-        es_este = lon > RESTAURANTE_LON  # más al este  = menos negativo
+        es_norte = lat > RESTAURANTE_LAT
+        es_este = lon > RESTAURANTE_LON
 
         if es_norte and not es_este:
             return Zona.NO  # Norte - Oeste
@@ -79,9 +74,8 @@ class GestorRepartos:
         else:
             return Zona.SE  # Sur - Este
 
-    # ==========================================================
     #  REGISTRO DE PEDIDOS
-    # ==========================================================
+
     def registrar_pedido(self, pedido: Pedido) -> None:
         """
         Recibe un Pedido ya armado, calcula (o corrige) la zona
@@ -89,12 +83,10 @@ class GestorRepartos:
         si corresponde formar una tanda en esa zona.
         """
         zona = self.calcular_zona(pedido.lat, pedido.lon)
-        pedido.zona = zona.value  # "NO", "NE", etc.
+        pedido.zona = zona.value
 
-        # Guardar en diccionario general
         self.pedidos[pedido.id] = pedido
 
-        # Encolar en la cola de su zona
         self.cola_por_zona[zona].append(pedido)
 
         print(
@@ -102,12 +94,8 @@ class GestorRepartos:
             f"Total cola zona {zona.value}: {len(self.cola_por_zona[zona])}"
         )
 
-        # Después de encolar, revisamos si hay que formar una tanda
         self._chequear_formar_tanda(zona)
 
-    # ==========================================================
-    #  FORMACIÓN DE TANDAS POR ZONA
-    # ==========================================================
     def _generar_id_pedido(self) -> str:
         return "P-" + uuid.uuid4().hex[:8].upper()
 
@@ -137,11 +125,11 @@ class GestorRepartos:
         ahora = datetime.utcnow()
         formar = False
 
-        # Regla 1: hay 7 o más pedidos
+        # Regla 1: hay 7 (temporal 2 pedidos para el testin de tandas) o más pedidos
         if len(cola) >= 2:
             formar = True
         else:
-            # Regla 2: el primero lleva >= 45 minutos
+            # Regla 2: >= 45 minutos
             primero = cola[0]
             if ahora - primero.ts_confirmado >= timedelta(minutes=45):
                 formar = True
@@ -149,7 +137,6 @@ class GestorRepartos:
         if not formar:
             return
 
-        # Sacamos hasta 7 pedidos de la cola para formar la tanda
         pedidos_tanda: List[Pedido] = []
         while cola and len(pedidos_tanda) < 7:
             pedidos_tanda.append(cola.popleft())
@@ -162,9 +149,8 @@ class GestorRepartos:
             pedidos=pedidos_tanda,
         )
 
-        # Guardamos la tanda
         self.tandas[tanda_id] = tanda
-        # Por ahora, todas las tandas van a la cola "sin repartidor"
+
         self.cola_tandas_sin_repartidor.append(tanda)
 
         print(
@@ -173,18 +159,16 @@ class GestorRepartos:
             f"Tandas en espera: {len(self.cola_tandas_sin_repartidor)}"
         )
 
-        # Por si ya hay repartidores disponibles, intentamos asignar
         self._asignar_tanda_a_repartidor_disponible()
 
-    # ==========================================================
     #  REPARTIDORES
-    # ==========================================================
+
     def registrar_repartidor(self, nombre: str, wa_id: str) -> Repartidor:
         """
         Crea un nuevo repartidor y lo deja en estado 'disponible'.
         Si hay tandas en espera, intenta asignarle una.
         """
-        # Si ya existe por wa_id, lo devolvemos
+
         if wa_id in self.repartidores_por_wa:
             rep = self.repartidores_por_wa[wa_id]
             print(f"[GESTOR] Repartidor ya existente: {rep}")
@@ -198,7 +182,6 @@ class GestorRepartos:
 
         print(f"[GESTOR] Repartidor registrado: {repartidor}")
 
-        # Intentamos asignarle una tanda si hay en espera
         self._asignar_tanda_a_repartidor_disponible(repartidor_especifico=repartidor)
 
         return repartidor
@@ -243,19 +226,98 @@ class GestorRepartos:
             repartidor.estado = "repartiendo"
             tanda.repartidor_id = repartidor.id
 
+            for p in tanda.pedidos:
+                p.estado = "en_reparto"
+
             print(
                 f"[GESTOR] Tanda {tanda.id} asignada a repartidor {repartidor.id} "
                 f"({repartidor.nombre})."
             )
 
-            # Más adelante, acá será el lugar para:
-            # - construir el BST de la tanda
-            # - enviar el primer pedido al repartidor por WhatsApp
-            # - etc.
+    #  ENTREGA DE PEDIDOS Y CICLO DE TANDAS
 
-    # ==========================================================
+    def marcar_pedido_entregado(
+        self,
+        wa_id_repartidor: str,
+        pedido_id: str,
+    ) -> bool:
+        """
+        Marca un pedido como 'entregado' dentro de la tanda_actual
+        del repartidor que tiene este wa_id.
+
+        Si al hacerlo todos los pedidos de la tanda quedan entregados,
+        se finaliza la tanda y, si hay otra en espera, se le asigna automáticamente.
+        """
+        repartidor = self.repartidores_por_wa.get(wa_id_repartidor)
+        if repartidor is None:
+            print(f"[GESTOR] Repartidor con wa_id {wa_id_repartidor} no encontrado.")
+            return False
+
+        tanda = repartidor.tanda_actual
+        if tanda is None:
+            print(f"[GESTOR] Repartidor {repartidor.id} no tiene tanda actual.")
+            return False
+
+        pedido_obj: Pedido | None = None
+        for p in tanda.pedidos:
+            if p.id == pedido_id:
+                pedido_obj = p
+                break
+
+        if pedido_obj is None:
+            print(
+                f"[GESTOR] Pedido {pedido_id} no encontrado en tanda {tanda.id} "
+                f"del repartidor {repartidor.id}."
+            )
+            return False
+
+        pedido_obj.estado = "entregado"
+        repartidor.pedidos_entregados += 1
+
+        todos_entregados = all(p.estado == "entregado" for p in tanda.pedidos)
+
+        if todos_entregados:
+            self._finalizar_tanda(repartidor, tanda)
+
+        return True
+
+    def _finalizar_tanda(self, repartidor: Repartidor, tanda: TandaPedidos) -> None:
+        """
+        Finaliza la tanda actual del repartidor:
+        - Le saca la tanda_actual.
+        - Si hay otra tanda en cola, se la asigna.
+        - Si no, deja al repartidor en estado 'disponible'.
+        """
+        print(
+            f"[GESTOR] Tanda {tanda.id} finalizada por repartidor "
+            f"{repartidor.id} ({repartidor.nombre})."
+        )
+
+        repartidor.tanda_actual = None
+
+        if self.cola_tandas_sin_repartidor:
+            siguiente_tanda = self.cola_tandas_sin_repartidor.popleft()
+            repartidor.tanda_actual = siguiente_tanda
+            repartidor.estado = "repartiendo"
+            siguiente_tanda.repartidor_id = repartidor.id
+
+            for p in siguiente_tanda.pedidos:
+                p.estado = "en_reparto"
+
+            print(
+                f"[GESTOR] Nueva tanda {siguiente_tanda.id} asignada a repartidor "
+                f"{repartidor.id} ({repartidor.nombre})."
+            )
+        else:
+
+            repartidor.estado = "disponible"
+            print(
+                f"[GESTOR] Repartidor {repartidor.id} ({repartidor.nombre}) "
+                f"queda disponible sin tandas asignadas."
+            )
+
     #  HELPERS PARA CREAR PEDIDO DESDE EL CARRITO
-    # ==========================================================
+
     def crear_y_registrar_pedido_desde_carrito(
         self,
         wa_id_cliente: str,
@@ -289,5 +351,4 @@ class GestorRepartos:
         return pedido
 
 
-# Instancia global para usar desde chat.py / main.py
 gestor_repartos = GestorRepartos()
