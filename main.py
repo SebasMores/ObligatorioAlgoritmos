@@ -1,14 +1,17 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel  
+from pydantic import BaseModel 
 from services.whatsapp_client import send_text_message, send_interactive_list_message
 from chat import bot
-from gestor_repartos import gestor_repartos  
+from gestor_repartos import gestor_repartos 
 import asyncio
 
 app = FastAPI()
 
 VERIFY_TOKEN = "bot_delivery_YA_2025"
+
+
+# ================== COLA DE MENSAJES 10s ==================
 
 
 class MessageAggregator:
@@ -34,14 +37,16 @@ class MessageAggregator:
 
         buf["texts"].append(text)
 
-       
-        if task is not None and not task.done():
-            task.cancel()
+        
+        existing_task = buf.get("task")
+        if existing_task is not None and not existing_task.done():
+            existing_task.cancel()
 
         
-        buf["task"] = asyncio.create_task(
+        new_task = asyncio.create_task(
             self._wait_and_process(user_id, process_callback)
         )
+        buf["task"] = new_task
 
     async def _wait_and_process(self, user_id: str, process_callback):
         try:
@@ -69,6 +74,7 @@ class MessageAggregator:
             return
 
 
+
 message_aggregator = MessageAggregator()
 
 
@@ -80,7 +86,7 @@ async def process_user_message(user_id: str, text: str):
     respuestas = bot.handle_message(user_id, text)
 
     for r in respuestas:
-       
+        
         if isinstance(r, str):
             
             if not r.strip():
@@ -88,7 +94,7 @@ async def process_user_message(user_id: str, text: str):
             send_text_message(user_id, r)
             continue
 
-        
+       
         if isinstance(r, dict) and r.get("kind") == "interactive_list":
             sections = r.get("sections", [])
             send_interactive_list_message(
@@ -198,7 +204,7 @@ async def whatsapp_webhook(request: Request):
                 ].get("title", "")
 
         else:
-            
+           
             text = ""
 
         if not text:
@@ -218,3 +224,4 @@ async def whatsapp_webhook(request: Request):
     except Exception as e:
         print("Error procesando mensaje:", e)
         return {"status": "error", "detail": str(e)}
+
