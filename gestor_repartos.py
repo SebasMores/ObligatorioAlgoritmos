@@ -138,7 +138,7 @@ class GestorRepartos:
         formar = False
 
         # Regla 1: hay 7 o más pedidos
-        if len(cola) >= 7:
+        if len(cola) >= 2:
             formar = True
         else:
             # Regla 2: el primero lleva >= 45 minutos
