@@ -56,7 +56,7 @@ class MessageAggregator:
             if not texts:
                 return
 
-            .
+            
             for t in texts:
                 t = t.strip()
                 if not t:
